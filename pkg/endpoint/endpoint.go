@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/log"
+	"github.com/project-pncp/private-kit/middlewares"
 )
 
 type EndpointSetup struct {
@@ -19,8 +20,12 @@ type EndpointSetup struct {
 func NewEndpointSetup(s service.Service, logger log.Logger) *EndpointSetup {
 	var postNoticeAnalysisEndpoint endpoint.Endpoint
 
+	loggingMiddleware := middlewares.EndpointLoggingMiddleware(logger, "agents")
+	metricsMiddleware := middlewares.MetricsMiddleware("agents")
 	{
 		postNoticeAnalysisEndpoint = MakePostNoticeAnalysisEndpoint(s)
+		postNoticeAnalysisEndpoint = loggingMiddleware("PostNoticeAnalysis")(postNoticeAnalysisEndpoint)
+		postNoticeAnalysisEndpoint = metricsMiddleware("PostNoticeAnalysis")(postNoticeAnalysisEndpoint)
 	}
 
 	return &EndpointSetup{

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/run"
+	"github.com/project-pncp/private-kit/middlewares"
 	"github.com/project-pncp/private-kit/mongo"
 	"github.com/project-pncp/private-kit/pkg/lib"
 	"github.com/project-pncp/private-kit/pkg/pb/protocols/agents"
@@ -69,6 +70,31 @@ func main() {
 			return grpcServer.Serve(grpcListener)
 		}, func(error) {
 			grpcServer.GracefulStop()
+		})
+	}
+	{
+		promListener, err := net.Listen("tcp", cfg.PromAddr)
+		config := middlewares.MetricsConfig{
+			Logger:         logger,
+			EnableEndpoint: true,
+			EnableHTTP:     true,
+			ServiceName:    "contracts",
+		}
+
+		srv := middlewares.NewMetricsServer(config, cfg.PromAddr)
+
+		g.Add(func() error {
+			level.Info(logger).Log(
+				"msg", "prometheus server started",
+				"addr", cfg.PromAddr,
+			)
+
+			return srv.Serve(promListener)
+		}, func(error) {
+			level.Error(logger).Log(
+				"msg", "failed to listen prometheus address",
+				"err", err,
+			)
 		})
 	}
 	/*{
