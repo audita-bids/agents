@@ -69,7 +69,7 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 	analysis.CreatedAt = &now
 	analysis.UpdatedAt = &now
 
-	s.analysis.CreateAnalysis(ctx, analysis)
+	err = s.analysis.CreateAnalysis(ctx, analysis)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed to save analysis", "err", err)
 		return nil, err
