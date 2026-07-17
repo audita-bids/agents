@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/go-kit/log"
-	"github.com/project-pncp/private-kit/kafka"
+	"github.com/newdesksoftwares/private-kit/kafka"
 )
 
 type Middleware func(Service) Service
@@ -33,6 +33,15 @@ func (mw *loggingMiddleware) PostAnalysis(ctx context.Context, request *store.An
 	return mw.next.PostAnalysis(ctx, request)
 }
 
+func (mw *loggingMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	defer func() {
+		mw.logger.Log("method", "GetAnalysis", "status", "completed")
+	}()
+
+	mw.logger.Log("method", "GetAnalysis", "status", "started")
+	return mw.next.GetAnalysis(ctx, request)
+}
+
 func RecoveryMiddleware(logger log.Logger) Middleware {
 	return func(next Service) Service {
 		return &recoveryMiddleware{
@@ -57,12 +66,22 @@ func (mw *recoveryMiddleware) PostAnalysis(ctx context.Context, request *store.A
 	return mw.next.PostAnalysis(ctx, request)
 }
 
+func (mw *recoveryMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			mw.logger.Log("method", "GetAnalysis", "status", "recovered", "error", r)
+		}
+	}()
+
+	return mw.next.GetAnalysis(ctx, request)
+}
+
 func EventMiddleware(logger log.Logger) Middleware {
 	return func(next Service) Service {
 		return &eventMiddleware{
 			next:     next,
 			logger:   logger,
-			producer: *kafka.NewKafkaProducer([]string{"kafka:29092"}),
+			producer: *kafka.NewKafkaProducer(),
 		}
 	}
 }
@@ -75,6 +94,10 @@ type eventMiddleware struct {
 
 func (mw *eventMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
 	return mw.next.PostAnalysis(ctx, request)
+}
+
+func (mw *eventMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	return mw.next.GetAnalysis(ctx, request)
 }
 
 /*func (mw *eventMiddleware) CreateClient(ctx context.Context, request *store.Client) (v *store.Client, err error) {

@@ -13,6 +13,7 @@ import (
 
 type Service interface {
 	PostAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
+	GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
 }
 
 type service struct {
@@ -45,7 +46,6 @@ func NewService(logger log.Logger, db *mongo.Database) Service {
 }
 
 func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error) {
-	analysis.ProcessNumber = analysis.ProcessID
 	v, err := s.openai.ResumeBase64(ctx, analysis.Base64)
 
 	if err != nil {
@@ -77,4 +77,8 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 
 	level.Info(s.logger).Log("msg", "analysis completed", "id", analysis.ID.Hex())
 	return analysis, nil
+}
+
+func (s *service) GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error) {
+	return s.analysis.GetBidAnalysis(ctx, analysis)
 }

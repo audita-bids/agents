@@ -11,11 +11,11 @@ import (
 	"agents/transports"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/newdesksoftwares/private-kit/middlewares"
+	"github.com/newdesksoftwares/private-kit/mongo"
+	"github.com/newdesksoftwares/private-kit/pkg/lib"
+	"github.com/newdesksoftwares/private-kit/pkg/pb/protocols/agents"
 	"github.com/oklog/run"
-	"github.com/project-pncp/private-kit/middlewares"
-	"github.com/project-pncp/private-kit/mongo"
-	"github.com/project-pncp/private-kit/pkg/lib"
-	"github.com/project-pncp/private-kit/pkg/pb/protocols/agents"
 	"google.golang.org/grpc"
 )
 

@@ -14,7 +14,7 @@ import (
 type Analysis struct {
 	ID        *bson.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
 	Finished  bool           `json:"finished" bson:"finished"`
-	ProcessID string         `json:"process_id" bson:"process_id,omitempty"`
+	BidID     string         `json:"bid_id" bson:"process_id,omitempty"`
 	UserID    string         `json:"user_id" bson:"user_id,omitempty"`
 	CreatedAt *time.Time     `json:"created_at" bson:"created_at,omitempty"`
 	UpdatedAt *time.Time     `json:"updated_at" bson:"updated_at,omitempty"`
@@ -23,7 +23,6 @@ type Analysis struct {
 	Content          string `json:"content,omitempty" bson:"content,omitempty"`
 	Object           string `json:"object,omitempty" bson:"object,omitempty"`
 	Modality         string `json:"modality,omitempty" bson:"modality,omitempty"`
-	ProcessNumber    string `json:"process_number,omitempty" bson:"process_number,omitempty"`
 	EstimatedValue   string `json:"estimated_value,omitempty" bson:"-"`
 	OpeningDate      string `json:"opening_date,omitempty" bson:"opening_date,omitempty"`
 	JudgmentCriteria string `json:"judgment_criteria,omitempty" bson:"judgment_criteria,omitempty"`
@@ -60,70 +59,18 @@ func (store *AnalysisStore) CreateAnalysis(ctx context.Context, analysis *Analys
 	return nil
 }
 
-/*
-func (store *FavoriteBidStore) CreateFavorite(ctx context.Context, favorite *FavoriteBid) error {
-	_, err := store.C.InsertOne(ctx, favorite)
-
-	if err != nil {
-		return err
+func (store *AnalysisStore) GetBidAnalysis(ctx context.Context, analysis *Analysis) (*Analysis, error) {
+	filter := &bson.M{
+		"bid_id":  analysis.BidID,
+		"user_id": analysis.UserID,
 	}
 
-	return nil
+	err := store.C.FindOne(ctx, filter).
+		Decode(analysis)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return analysis, nil
 }
-
-func (store *FavoriteBidStore) ListFavorite(ctx context.Context, favorite *FavoriteBid) ([]*FavoriteBid, int64, error) {
-	f, _ := decode.GetFromContext[query.Filter](ctx, "filter")
-
-	if favorite.UserID != "" {
-		f.Matches = append(f.Matches, query.Match{
-			Key:   "user_id",
-			Op:    "eq",
-			Value: favorite.UserID,
-		})
-	}
-
-	if favorite.ProcessID != "" {
-		f.Matches = append(f.Matches, query.Match{
-			Key:   "process_id",
-			Op:    "eq",
-			Value: favorite.ProcessID,
-		})
-	}
-
-	bsonFilter := f.AdaptBsonFilter(bson.M{}, &f)
-
-	limit := f.Rows
-	skip := (f.Page - 1) * limit
-	opt := options.Find().
-		SetLimit(limit).
-		SetSkip(skip)
-
-	var bids []*FavoriteBid
-
-	cursor, err := store.C.Find(ctx, bsonFilter, opt)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if err := cursor.All(ctx, &bids); err != nil {
-		return nil, 0, err
-	}
-
-	var total int64
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		total, err = store.C.CountDocuments(ctx, bsonFilter)
-
-		if err != nil {
-			total = 0
-		}
-	}()
-
-	wg.Wait()
-
-	return bids, total, err
-}*/

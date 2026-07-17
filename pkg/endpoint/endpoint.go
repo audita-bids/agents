@@ -7,18 +7,17 @@ import (
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/log"
-	"github.com/project-pncp/private-kit/middlewares"
+	"github.com/newdesksoftwares/private-kit/middlewares"
 )
 
 type EndpointSetup struct {
-	CreateFavoriteBid  endpoint.Endpoint
-	ListFavoriteBid    endpoint.Endpoint
-	DeleteFavoriteBid  endpoint.Endpoint
 	PostNoticeAnalysis endpoint.Endpoint
+	GetAnalysis        endpoint.Endpoint
 }
 
 func NewEndpointSetup(s service.Service, logger log.Logger) *EndpointSetup {
 	var postNoticeAnalysisEndpoint endpoint.Endpoint
+	var getAnalysisEndpoint endpoint.Endpoint
 
 	loggingMiddleware := middlewares.EndpointLoggingMiddleware(logger, "agents")
 	metricsMiddleware := middlewares.MetricsMiddleware("agents")
@@ -26,10 +25,15 @@ func NewEndpointSetup(s service.Service, logger log.Logger) *EndpointSetup {
 		postNoticeAnalysisEndpoint = MakePostNoticeAnalysisEndpoint(s)
 		postNoticeAnalysisEndpoint = loggingMiddleware("PostNoticeAnalysis")(postNoticeAnalysisEndpoint)
 		postNoticeAnalysisEndpoint = metricsMiddleware("PostNoticeAnalysis")(postNoticeAnalysisEndpoint)
+
+		getAnalysisEndpoint = MakeGetAnalysisEndpoint(s)
+		getAnalysisEndpoint = loggingMiddleware("GetAnalysis")(getAnalysisEndpoint)
+		getAnalysisEndpoint = metricsMiddleware("GetAnalysis")(getAnalysisEndpoint)
 	}
 
 	return &EndpointSetup{
 		PostNoticeAnalysis: postNoticeAnalysisEndpoint,
+		GetAnalysis:        getAnalysisEndpoint,
 	}
 }
 
@@ -38,6 +42,21 @@ func MakePostNoticeAnalysisEndpoint(s service.Service) endpoint.Endpoint {
 		req := request.(*store.Analysis)
 
 		c, err := s.PostAnalysis(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Resp{
+			Items: c,
+		}, nil
+	}
+}
+
+func MakeGetAnalysisEndpoint(s service.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
+		req := request.(*store.Analysis)
+
+		c, err := s.GetAnalysis(ctx, req)
 		if err != nil {
 			return nil, err
 		}
