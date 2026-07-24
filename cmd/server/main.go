@@ -33,12 +33,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	redis, err := lib.Initiate()
+
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to connect to redis", "err", err)
+		os.Exit(1)
+	}
+
 	database := db.Database("bids")
 
 	var (
 		grpcServer *grpc.Server
 
-		svc         = service.NewService(logger, database)
+		svc         = service.NewService(logger, database, redis.GetClient())
 		endpoints   = endpoint.NewEndpointSetup(svc, logger)
 		grpcHandler = transports.NewGRPCServer(*endpoints)
 		// kafkaHandler = transports.NewKafkaConsumers(*endpoints)
@@ -47,7 +54,10 @@ func main() {
 		// httpServer *httpCaller.Server
 	)
 
-	grpcServer = grpc.NewServer(grpc.UnaryInterceptor(lib.RecoveryInterceptor(logger)))
+	grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(lib.RecoveryInterceptor(logger)),
+		grpc.MaxRecvMsgSize(64*1024*1024),
+	)
 	agents.RegisterAgentsServiceServer(grpcServer, grpcHandler)
 
 	ctx := context.Background()

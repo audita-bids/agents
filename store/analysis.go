@@ -19,13 +19,17 @@ type Analysis struct {
 	CreatedAt *time.Time     `json:"created_at" bson:"created_at,omitempty"`
 	UpdatedAt *time.Time     `json:"updated_at" bson:"updated_at,omitempty"`
 
-	Base64           string `json:"base64,omitempty" bson:"-"`
-	Content          string `json:"content,omitempty" bson:"content,omitempty"`
-	Object           string `json:"object,omitempty" bson:"object,omitempty"`
-	Modality         string `json:"modality,omitempty" bson:"modality,omitempty"`
-	EstimatedValue   string `json:"estimated_value,omitempty" bson:"-"`
-	OpeningDate      string `json:"opening_date,omitempty" bson:"opening_date,omitempty"`
-	JudgmentCriteria string `json:"judgment_criteria,omitempty" bson:"judgment_criteria,omitempty"`
+	Base64           string   `json:"base64,omitempty" bson:"-"`
+	Content          string   `json:"content,omitempty" bson:"content,omitempty"`
+	Object           string   `json:"object,omitempty" bson:"object,omitempty"`
+	Modality         string   `json:"modality,omitempty" bson:"modality,omitempty"`
+	ProcessNumber    string   `json:"process_number,omitempty" bson:"process_number,omitempty"`
+	EstimatedValue   string   `json:"estimated_value,omitempty" bson:"estimated_value,omitempty"`
+	OpeningDate      string   `json:"opening_date,omitempty" bson:"opening_date,omitempty"`
+	JudgmentCriteria string   `json:"judgment_criteria,omitempty" bson:"judgment_criteria,omitempty"`
+	Keywords         []string `json:"keywords,omitempty" bson:"keywords,omitempty"`
+	Score            int32    `json:"score" bson:"score"`
+	AnalysisResult   string   `json:"analysis_result,omitempty" bson:"analysis_result,omitempty"`
 }
 
 func (a *Analysis) Unmarshal(v interface{}) error {
@@ -44,6 +48,14 @@ func (a *Analysis) Decode(r *http.Request) {
 	a.ID = &id
 }
 
+func (a *Analysis) Key() string {
+	return "bid_" + a.BidID + "_" + a.UserID
+}
+
+func (a *Analysis) KeyHandles() string {
+	return "bid_handles_" + a.BidID + "_" + a.UserID
+}
+
 /* Stores */
 type AnalysisStore struct {
 	C *mongo.Collection
@@ -52,17 +64,13 @@ type AnalysisStore struct {
 func (store *AnalysisStore) CreateAnalysis(ctx context.Context, analysis *Analysis) error {
 	_, err := store.C.InsertOne(ctx, analysis)
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (store *AnalysisStore) GetBidAnalysis(ctx context.Context, analysis *Analysis) (*Analysis, error) {
 	filter := &bson.M{
-		"bid_id":  analysis.BidID,
-		"user_id": analysis.UserID,
+		"process_id": analysis.BidID,
+		"user_id":    analysis.UserID,
 	}
 
 	err := store.C.FindOne(ctx, filter).

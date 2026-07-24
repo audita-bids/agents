@@ -8,6 +8,7 @@ import (
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/log"
 	"github.com/newdesksoftwares/private-kit/middlewares"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type EndpointSetup struct {
@@ -41,6 +42,9 @@ func MakePostNoticeAnalysisEndpoint(s service.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(*store.Analysis)
 
+		bId := bson.NewObjectID()
+		req.ID = &bId
+
 		c, err := s.PostAnalysis(ctx, req)
 		if err != nil {
 			return nil, err
@@ -61,9 +65,7 @@ func MakeGetAnalysisEndpoint(s service.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		return &Resp{
-			Items: c,
-		}, nil
+		return c, nil
 	}
 }
 

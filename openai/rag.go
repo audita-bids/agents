@@ -18,7 +18,8 @@ type RAG struct {
 }
 
 func NewRAG() (*RAG, error) {
-	llm, err := openai.New()
+	llm, err := openai.New(openai.WithEmbeddingModel("text-embedding-3-small")) // https://developers.openai.com/api/docs/models/text-embedding-3-small good cost
+
 	if err != nil {
 		return nil, fmt.Errorf("llm: %w", err)
 	}

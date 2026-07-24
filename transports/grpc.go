@@ -4,6 +4,8 @@ import (
 	"agents/pkg/endpoint"
 	"agents/store"
 	"context"
+	"strconv"
+	"time"
 
 	grpctransport "github.com/go-kit/kit/transport/grpc"
 	"github.com/newdesksoftwares/private-kit/decode"
@@ -64,6 +66,7 @@ func decodeGRPCPostNoticeAnalysisRequest(_ context.Context, grpcReq interface{})
 	return &store.Analysis{
 		Base64: req.Base64,
 		UserID: req.UserId,
+		BidID:  req.ProcessId,
 	}, nil
 }
 
@@ -73,19 +76,37 @@ func encodeGRPCPostNoticeAnalysisResponse(_ context.Context, grpcResp interface{
 		return nil, resp.Error
 	}
 
-	analysis := resp.Items.(*store.Analysis)
+	return toAgentsComplete(resp.Items.(*store.Analysis)), nil
+}
 
-	result := &agents.AgentsComplete{
-		Id:               analysis.ID.Hex(),
-		UserId:           analysis.UserID,
-		Finished:         analysis.Finished,
-		Object:           analysis.Object,
-		Modality:         analysis.Modality,
-		EstimatedValue:   analysis.EstimatedValue,
-		OpeningDate:      analysis.OpeningDate,
-		JudgmentCriteria: analysis.JudgmentCriteria,
+// toAgentsComplete maps the stored analysis onto the proto message explicitly.
+// (JSON-tag-based mapping breaks on the int score vs string proto field and on
+// snake/Pascal tag mismatches — keep this the single conversion point.)
+func toAgentsComplete(a *store.Analysis) *agents.AgentsComplete {
+	out := &agents.AgentsComplete{
+		Finished:         a.Finished,
+		ProcessId:        a.BidID,
+		UserId:           a.UserID,
+		Content:          a.Content,
+		Object:           a.Object,
+		Modality:         a.Modality,
+		ProcessNumber:    a.ProcessNumber,
+		EstimatedValue:   a.EstimatedValue,
+		OpeningDate:      a.OpeningDate,
+		JudgmentCriteria: a.JudgmentCriteria,
+		AnalysisResult:   a.AnalysisResult,
+		Score:            strconv.FormatInt(int64(a.Score), 10),
 	}
-	return result, nil
+	if a.ID != nil {
+		out.Id = a.ID.Hex()
+	}
+	if a.CreatedAt != nil {
+		out.CreatedAt = a.CreatedAt.Format(time.RFC3339)
+	}
+	if a.UpdatedAt != nil {
+		out.UpdatedAt = a.UpdatedAt.Format(time.RFC3339)
+	}
+	return out
 }
 
 func decodeGRPCGetAnalysisRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
@@ -100,8 +121,8 @@ func decodeGRPCGetAnalysisRequest(_ context.Context, grpcReq interface{}) (inter
 func encodeGRPCGetAnalysisResponse(_ context.Context, grpcResp interface{}) (interface{}, error) {
 	resp := grpcResp.(*store.Analysis)
 
-	var analysis agents.AgentsComplete
-	resp.Unmarshal(analysis)
+	analysis := new(agents.AgentsComplete)
+	resp.Unmarshal(&analysis)
 
 	return analysis, nil
 }

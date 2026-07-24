@@ -3,9 +3,12 @@ package service
 import (
 	"agents/store"
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/newdesksoftwares/private-kit/kafka"
+	"github.com/redis/go-redis/v9"
 )
 
 type Middleware func(Service) Service
@@ -56,20 +59,22 @@ type recoveryMiddleware struct {
 	logger log.Logger
 }
 
-func (mw *recoveryMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+func (mw *recoveryMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (analysis *store.Analysis, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			mw.logger.Log("method", "PostAnalysis", "status", "recovered", "error", r)
+			err = fmt.Errorf("recovered from panic: %v", r)
 		}
 	}()
 
 	return mw.next.PostAnalysis(ctx, request)
 }
 
-func (mw *recoveryMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+func (mw *recoveryMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (analysis *store.Analysis, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			mw.logger.Log("method", "GetAnalysis", "status", "recovered", "error", r)
+			err = fmt.Errorf("recovered from panic: %v", r)
 		}
 	}()
 
@@ -118,3 +123,46 @@ func (mw *eventMiddleware) GetAnalysis(ctx context.Context, request *store.Analy
 
 	return mw.next.CreateClient(ctx, request)
 }*/
+
+func CacheMiddleware(logger log.Logger, redis *redis.Client) Middleware {
+	return func(next Service) Service {
+		return &cacheMiddleware{
+			next:   next,
+			logger: logger,
+			redis:  redis,
+		}
+	}
+}
+
+type cacheMiddleware struct {
+	next   Service
+	logger log.Logger
+	redis  *redis.Client
+}
+
+func (mw *cacheMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (result *store.Analysis, err error) {
+	defer func() {
+		if err == nil && result != nil {
+			fmt.Println(request.KeyHandles())
+			mw.redis.Del(ctx, request.KeyHandles()) // remove handlers.
+
+			mw.redis.Set(ctx, result.Key(), result, 0)
+		}
+	}()
+
+	return mw.next.PostAnalysis(ctx, request)
+}
+
+func (mw *cacheMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	cache := mw.redis.Get(ctx, request.Key())
+
+	if cache.Err() == nil {
+		var analysis store.Analysis
+
+		if err := json.Unmarshal([]byte(cache.Val()), &analysis); err == nil {
+			return &analysis, nil
+		}
+	}
+
+	return mw.next.GetAnalysis(ctx, request)
+}
