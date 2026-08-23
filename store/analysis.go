@@ -56,6 +56,10 @@ func (a *Analysis) KeyHandles() string {
 	return "bid_handles_" + a.BidID + "_" + a.UserID
 }
 
+func (a *Analysis) KeyAnalysisUse() string {
+	return "analysis" + "_" + a.UserID + "_" + time.Now().Format("2006-01-02")
+}
+
 /* Stores */
 type AnalysisStore struct {
 	C *mongo.Collection

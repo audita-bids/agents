@@ -2,6 +2,7 @@ package openai
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,7 +10,18 @@ import (
 	"github.com/ledongthuc/pdf"
 )
 
-func ExtractText(r io.Reader) (string, error) {
+var (
+	ErrUnsupportedPDF = errors.New("unsupported pdf")
+	ErrEmptyPDF       = errors.New("pdf has no extractable text")
+)
+
+func ExtractText(r io.Reader) (_ string, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("%w: %v", ErrUnsupportedPDF, rec)
+		}
+	}()
+
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return "", fmt.Errorf("read: %w", err)
@@ -33,5 +45,11 @@ func ExtractText(r io.Reader) (string, error) {
 		text.WriteString("\n")
 	}
 
-	return text.String(), nil
+	out := text.String()
+
+	if strings.TrimSpace(out) == "" {
+		return "", ErrEmptyPDF
+	}
+
+	return out, nil
 }

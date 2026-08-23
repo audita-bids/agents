@@ -8,9 +8,10 @@ require (
 	github.com/go-kit/log v0.2.1
 	github.com/gorilla/mux v1.8.1
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
-	github.com/newdesksoftwares/private-kit v1.0.14
+	github.com/newdesksoftwares/private-kit v1.0.44
 	github.com/oklog/run v1.2.0
 	github.com/openai/openai-go/v3 v3.34.0
+	github.com/redis/go-redis/v9 v9.21.0
 	github.com/tmc/langchaingo v0.1.14
 	go.mongodb.org/mongo-driver/v2 v2.6.0
 	google.golang.org/grpc v1.81.0
@@ -34,7 +35,6 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	github.com/segmentio/kafka-go v0.4.51 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
