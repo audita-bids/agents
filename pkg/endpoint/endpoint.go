@@ -5,9 +5,9 @@ import (
 	"agents/store"
 	"context"
 
+	"github.com/audita-bids/private-kit/middlewares"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/log"
-	"github.com/newdesksoftwares/private-kit/middlewares"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

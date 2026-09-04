@@ -1,5 +1,7 @@
 github.com/Oudwins/zog v0.22.2 h1:neSFVFsn7cd4azB9+2hK1sn1By5UZGc8o28vNWJhUIE=
 github.com/Oudwins/zog v0.22.2/go.mod h1:c4ADJ2zNkJp37ZViNy1o3ZZoeMvO7UQVO7BaPtRoocg=
+github.com/audita-bids/private-kit v1.0.53 h1:UZ7SShjsOdnIUOz7wgTAYxXB6AL4dEoz2XDA1S8A0R4=
+github.com/audita-bids/private-kit v1.0.53/go.mod h1:ub1u0i7N+X3DiNlpNe1VlUveyMQZpaJzgGTHZBuDk+A=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 h1:DDGfHa7BWjL4YnC6+E63dPcxHo2sUxDIu8g3QgEJdRY=
@@ -49,8 +51,6 @@ github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728 h1:QwWKgMY28TAXaDl+
 github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728/go.mod h1:1fEHWurg7pvf5SG6XNE5Q8UZmOwex51Mkx3SLhrW5B4=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/newdesksoftwares/private-kit v1.0.44 h1:PcrvYhY9OZA8j81zMhJ8ycEyrNl76TvxfVemn3lYOw0=
-github.com/newdesksoftwares/private-kit v1.0.44/go.mod h1:BaawqhvOXp9JSH+25Kn7VfL14U247wtURckCnHDG5uM=
 github.com/oklog/run v1.2.0 h1:O8x3yXwah4A73hJdlrwo/2X6J62gE5qTMusH0dvz60E=
 github.com/oklog/run v1.2.0/go.mod h1:mgDbKRSwPhJfesJ4PntqFUbKQRZ50NgmZTSPlFA0YFk=
 github.com/openai/openai-go/v3 v3.34.0 h1:YuFnPyHcclPOYR8dPHeoaCtanDS3pQZ/H0yczcZGUNo=

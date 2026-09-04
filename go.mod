@@ -1,14 +1,14 @@
 module agents
 
-go 1.25.0
+go 1.26
 
 require (
+	github.com/audita-bids/private-kit v1.0.53
 	github.com/drewlanenga/govector v0.0.0-20220726163947-b958ac08bc93
 	github.com/go-kit/kit v0.13.0
 	github.com/go-kit/log v0.2.1
 	github.com/gorilla/mux v1.8.1
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
-	github.com/newdesksoftwares/private-kit v1.0.44
 	github.com/oklog/run v1.2.0
 	github.com/openai/openai-go/v3 v3.34.0
 	github.com/redis/go-redis/v9 v9.21.0
