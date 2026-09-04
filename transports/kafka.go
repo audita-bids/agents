@@ -5,8 +5,8 @@ import (
 	"client/pkg/endpoint"
 	"context"
 
-	"github.com/project-pncp/private-kit/kafka"
-	"github.com/project-pncp/private-kit/pkg/pb/protocols/pncp"
+	"github.com/audita-bids/private-kit/kafka"
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/pncp"
 	kafkaGo "github.com/segmentio/kafka-go"
 )
 

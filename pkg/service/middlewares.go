@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/audita-bids/private-kit/kafka"
 	"github.com/go-kit/log"
-	"github.com/newdesksoftwares/private-kit/kafka"
 	"github.com/redis/go-redis/v9"
 )
 

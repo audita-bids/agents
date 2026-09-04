@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/audita-bids/private-kit/connectors"
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/client"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-kit/log"
-	"github.com/newdesksoftwares/private-kit/connectors"
-	"github.com/newdesksoftwares/private-kit/pkg/pb/protocols/client"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )

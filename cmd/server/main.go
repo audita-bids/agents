@@ -2,19 +2,21 @@ package main
 
 import (
 	"agents/options"
+	"agents/store"
 	"context"
 	"net"
 	"os"
+	"sync/atomic"
 
 	"agents/pkg/endpoint"
 	"agents/pkg/service"
 	"agents/transports"
 
+	"github.com/audita-bids/private-kit/middlewares"
+	"github.com/audita-bids/private-kit/mongo"
+	"github.com/audita-bids/private-kit/pkg/lib"
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/agents"
 	"github.com/go-kit/kit/log/level"
-	"github.com/newdesksoftwares/private-kit/middlewares"
-	"github.com/newdesksoftwares/private-kit/mongo"
-	"github.com/newdesksoftwares/private-kit/pkg/lib"
-	"github.com/newdesksoftwares/private-kit/pkg/pb/protocols/agents"
 	"github.com/oklog/run"
 	"google.golang.org/grpc"
 )
@@ -64,7 +66,22 @@ func main() {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	ready := new(atomic.Bool)
+
 	var g run.Group
+	/* Add indexes into mongo store. */
+	{
+		g.Add(func() error {
+			err := store.PersistIndexes(ctx, database)
+			if err != nil {
+				return err
+			}
+
+			<-ctx.Done()
+			return nil
+		}, func(err error) {
+		})
+	}
 	{
 		grpcListener, err := net.Listen("tcp", cfg.GRPCAddr)
 		if err != nil {
@@ -89,6 +106,7 @@ func main() {
 			EnableEndpoint: true,
 			EnableHTTP:     true,
 			ServiceName:    "contracts",
+			Ready:          ready,
 		}
 
 		srv := middlewares.NewMetricsServer(config, cfg.PromAddr)
@@ -140,6 +158,8 @@ func main() {
 			level.Error(logger).Log("msg", "failed to listen on http address", "err", err)
 		})
 	}*/
+
+	ready.Store(true)
 
 	if err := g.Run(); err != nil {
 		level.Error(logger).Log("msg", "servers failed", "err", err)

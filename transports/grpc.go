@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/audita-bids/private-kit/decode"
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/agents"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
-	"github.com/newdesksoftwares/private-kit/decode"
-	"github.com/newdesksoftwares/private-kit/pkg/pb/protocols/agents"
 )
 
 type GRPCServer struct {
