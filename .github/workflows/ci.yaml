@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    uses: audita-bids/infrastructure/.github/workflows/go-service.yaml@main
+    permissions:
+      contents: read
+      pull-requests: read
+      packages: write
+    with:
+      image: ghcr.io/audita-bids/agents
+      chart: agents
+    secrets:
+      GOPRIVATE_TOKEN: ${{ secrets.GOPRIVATE_TOKEN }}
+      INFRA_TOKEN: ${{ secrets.INFRA_TOKEN }}
