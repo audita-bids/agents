@@ -147,8 +147,8 @@ type cacheMiddleware struct {
 func (mw *cacheMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (result *store.Analysis, err error) {
 	count, err := mw.redis.Get(ctx, request.KeyAnalysisUse()).Int()
 
-	if err == nil && count > 15 {
-		return nil, errors.New("you have used AI more than 15x in a day.")
+	if err == nil && count > 10 {
+		return nil, errors.New("you have used AI more than 10x in a day.")
 	}
 
 	defer func() {
@@ -157,8 +157,8 @@ func (mw *cacheMiddleware) PostAnalysis(ctx context.Context, request *store.Anal
 
 			mw.redis.Set(ctx, result.Key(), result, 0)
 
-			// we will set here an cache to validate if client used AI more than 15x in a day.
-			// we will only use the time.now as identifier to see what day we are. User can use 15x on 0:00am, 5am, 5pm... When he needs. But 15x in a day.
+			// we will set here an cache to validate if client used AI more than 10x in a day.
+			// we will only use the time.now as identifier to see what day we are. User can use 10x on 0:00am, 5am, 5pm... When he needs. But 10x in a day.
 			mw.redis.Incr(ctx, result.KeyAnalysisUse())
 		}
 	}()

@@ -32,8 +32,8 @@ func NewRAG() (*RAG, error) {
 
 func (r *RAG) LoadText(ctx context.Context, text string) error {
 	splitter := textsplitter.NewRecursiveCharacter(
-		textsplitter.WithChunkSize(1000),
-		textsplitter.WithChunkOverlap(100),
+		textsplitter.WithChunkSize(800),
+		textsplitter.WithChunkOverlap(80),
 	)
 	chunks, err := splitter.SplitText(text)
 	if err != nil {

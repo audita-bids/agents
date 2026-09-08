@@ -1,7 +1,7 @@
 github.com/Oudwins/zog v0.22.2 h1:neSFVFsn7cd4azB9+2hK1sn1By5UZGc8o28vNWJhUIE=
 github.com/Oudwins/zog v0.22.2/go.mod h1:c4ADJ2zNkJp37ZViNy1o3ZZoeMvO7UQVO7BaPtRoocg=
-github.com/audita-bids/private-kit v1.0.53 h1:UZ7SShjsOdnIUOz7wgTAYxXB6AL4dEoz2XDA1S8A0R4=
-github.com/audita-bids/private-kit v1.0.53/go.mod h1:ub1u0i7N+X3DiNlpNe1VlUveyMQZpaJzgGTHZBuDk+A=
+github.com/audita-bids/private-kit v1.0.54 h1:/D6KYFDiC6HnrverWYYrAe0eOPszCVQu0cElos4C0Ks=
+github.com/audita-bids/private-kit v1.0.54/go.mod h1:ub1u0i7N+X3DiNlpNe1VlUveyMQZpaJzgGTHZBuDk+A=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 h1:DDGfHa7BWjL4YnC6+E63dPcxHo2sUxDIu8g3QgEJdRY=

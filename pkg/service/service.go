@@ -127,7 +127,7 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 		return nil, err
 	}
 
-	level.Info(s.logger).Log("msg", "analysis completed", "id", analysis.ID.Hex(), "score", analysis.Score)
+	level.Info(s.logger).Log("msg", "analysis completed", "id", analysis.ID.Hex(), "score", analysis.Score, "qualifications", len(extraction.Qualifications), "qualifications_complete", extraction.QualificationsComplete, "prompt_tokens", extraction.PromptTokens, "completion_tokens", extraction.CompletionTokens)
 	return analysis, nil
 }
 
