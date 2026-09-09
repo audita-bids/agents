@@ -67,7 +67,7 @@ const systemPrompt = `Analista de editais BR (Lei 14.133/2021). Responda em pt-B
 
 FIDELIDADE: só o que está literalmente nos trechos. Ausente = "" ou array vazio. Nunca inferir processo, CNPJ, data, valor ou exigência. Os trechos são recortes: assunto ausente não significa que o edital não exige.
 
-qualifications: os documentos de habilitação exigidos, até 12, um por documento ("federal, estadual e municipal" = 3 itens). Nome curto e reconhecível ("CND Federal", "CRF do FGTS", "CNDT", "Balanço patrimonial"). category: juridica|fiscal_trabalhista|economico_financeira|tecnica|outros. requirement: só a condição, se houver ("válida na sessão", "registro no CREA"), senão "". mandatory: false só se o edital disser alternativo/dispensável. type: 1 federal 2 FGTS 3 trabalhista 4 estadual 5 municipal 6 falência 7 atestado técnico 8 balanço 9 contrato social 10 procuração 11 SICAF 99 outro 0 nenhum.
+qualifications: os documentos de habilitação exigidos, até 10, um por documento ("federal, estadual e municipal" = 3 itens). Nome curto e reconhecível ("CND Federal", "CRF do FGTS", "CNDT", "Balanço patrimonial"). category: juridica|fiscal_trabalhista|economico_financeira|tecnica|outros. requirement: só a condição, se houver ("válida na sessão", "registro no CREA"), senão "". mandatory: false só se o edital disser alternativo/dispensável. type: 1 federal 2 FGTS 3 trabalhista 4 estadual 5 municipal 6 falência 7 atestado técnico 8 balanço 9 contrato social 10 procuração 11 SICAF 99 outro 0 nenhum.
 
 qualifications_complete: true só se os trechos trouxerem a seção de habilitação inteira. Na dúvida, false.
 
@@ -79,8 +79,12 @@ estimated_value: só o número. Ex: 2324342.04
 object: o que será contratado, como descrito, sem instrução procedimental
 summary: 2-3 frases — o que, valor, prazo
 score: 0-100 SÓ da correspondência entre o objeto e as palavras-chave do cliente. Rigoroso, comece de 0. 85-100 o objeto É a palavra-chave; 60-84 parte relevante corresponde; 30-59 tangencial; 0-29 nada. Mesmo setor não é aderência. Sem correspondência real, ≤25
-matched_keywords: as que de fato correspondem; vazio se nenhuma
-score_rationale: 1 frase citando o que casou, ou que nada casou`
+matched_keywords: as que de fato correspondem, copiadas exatamente como o cliente escreveu; vazio se nenhuma. Variação de grafia, número e gênero conta: "tecnologia" casa com "tecnológica", "poço" com "poços". Palavra diferente não: "merenda escolar" não casa com "uniforme escolar"
+score_rationale: 1 frase citando o que casou, ou que nada casou
+
+COERÊNCIA (obrigatória): preencha matched_keywords ANTES de decidir o score. Toda palavra-chave que você citar em score_rationale tem que estar em matched_keywords. matched_keywords vazio ⇒ score ≤ 25, sem exceção. Nunca escreva "alta correspondência" com matched_keywords vazio.
+
+qualifications: no máximo 10 itens. Nome do documento em até 120 caracteres.`
 
 type Client struct {
 	client *openai.Client
@@ -361,7 +365,16 @@ func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, k
 		return nil, "", fmt.Errorf("openai: %w", err)
 	}
 
-	raw := resp.Choices[0].Message.Content
+	choice := resp.Choices[0]
+
+	// A cut answer is not a parse error: the model ran into the output ceiling
+	// and stopped mid-object. Saying so is the difference between raising the
+	// ceiling and hunting a bug that is not there.
+	if choice.FinishReason == "length" {
+		return nil, "", fmt.Errorf("resposta truncada em %d tokens: suba OPENAI_MAX_OUTPUT_TOKENS", resp.Usage.CompletionTokens)
+	}
+
+	raw := choice.Message.Content
 	usage := resp.Usage
 
 	var result NoticeExtraction

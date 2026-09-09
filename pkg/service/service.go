@@ -4,9 +4,11 @@ import (
 	"agents/openai"
 	"agents/store"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/audita-bids/private-kit/connectors"
 	"github.com/audita-bids/private-kit/pkg/pb/protocols/client"
@@ -100,11 +102,29 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 		return nil, err
 	}
 
+	if len(extraction.MatchedKeywords) == 0 {
+		extraction.MatchedKeywords = matchedKeywords(keywords, extraction.Object+" "+extraction.Summary)
+	}
+
 	score := int32(extraction.Score)
+
+	// Nothing matched and the model still scored high: the score is the part
+	// that is wrong, and the rationale has to say so too — a 25 next to "alta
+	// correspondência" is the card contradicting itself on screen.
 	if len(extraction.MatchedKeywords) == 0 && score > 25 {
 		level.Info(s.logger).Log("msg", "score clamped: no matched keywords", "model_score", score)
 		score = 25
+		extraction.Score = 25
+		extraction.ScoreRationale = "Nenhuma palavra-chave da sua conta corresponde ao objeto deste edital."
 	}
+
+	corrected, err := json.Marshal(extraction)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to marshal analysis", "err", err)
+		return nil, err
+	}
+
+	raw = string(corrected)
 
 	now := time.Now()
 	analysis.Finished = true
@@ -129,6 +149,65 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 
 	level.Info(s.logger).Log("msg", "analysis completed", "id", analysis.ID.Hex(), "score", analysis.Score, "qualifications", len(extraction.Qualifications), "qualifications_complete", extraction.QualificationsComplete, "prompt_tokens", extraction.PromptTokens, "completion_tokens", extraction.CompletionTokens)
 	return analysis, nil
+}
+
+var accents = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a",
+	"é", "e", "è", "e", "ê", "e", "ë", "e",
+	"í", "i", "ì", "i", "î", "i", "ï", "i",
+	"ó", "o", "ò", "o", "ô", "o", "õ", "o", "ö", "o",
+	"ú", "u", "ù", "u", "û", "u", "ü", "u",
+	"ç", "c", "ñ", "n",
+)
+
+const (
+	// Shorter than this a word carries no meaning of its own ("de", "por") and
+	// would match half the notice.
+	minKeywordToken = 4
+	// What comes off the end to reach the stem: enough for plural, gender and
+	// the usual derivation ("tecnologia" → "tecnolog" → "tecnológica").
+	keywordStemTrim = 2
+)
+
+func words(s string) []string {
+	return strings.FieldsFunc(accents.Replace(strings.ToLower(s)), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+// matchedKeywords the keywords the text actually carries, compared by stem so "tecnologia" reaches "tecnológica" — and requiring every significant word of the keyword, so "merenda escolar" still does not reach "uniforme escolar".
+func matchedKeywords(keywords []string, text string) []string {
+	found := words(text)
+
+	var matched []string
+
+	for _, k := range keywords {
+		hits, significant := 0, 0
+
+		for _, token := range words(k) {
+			runes := []rune(token)
+
+			if len(runes) < minKeywordToken {
+				continue
+			}
+
+			significant++
+			stem := string(runes[:max(minKeywordToken, len(runes)-keywordStemTrim)])
+
+			for _, w := range found {
+				if strings.HasPrefix(w, stem) {
+					hits++
+					break
+				}
+			}
+		}
+
+		if significant > 0 && hits == significant {
+			matched = append(matched, k)
+		}
+	}
+
+	return matched
 }
 
 func (s *service) GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error) {
