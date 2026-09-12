@@ -3,7 +3,7 @@ module agents
 go 1.26
 
 require (
-	github.com/audita-bids/private-kit v1.0.55
+	github.com/audita-bids/private-kit v1.0.58
 	github.com/drewlanenga/govector v0.0.0-20220726163947-b958ac08bc93
 	github.com/go-kit/kit v0.13.0
 	github.com/go-kit/log v0.2.1

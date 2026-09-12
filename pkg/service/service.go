@@ -21,6 +21,7 @@ import (
 type Service interface {
 	PostAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
 	GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
+	PostCopilot(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
 }
 
 type service struct {
@@ -151,6 +152,31 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 	return analysis, nil
 }
 
+func (s *service) GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error) {
+	return s.analysis.GetBidAnalysis(ctx, analysis)
+}
+
+func (s *service) PostCopilot(ctx context.Context, copilot *store.Analysis) (*store.Analysis, error) {
+	resp, err := s.openai.MessageCopilot(ctx, copilot.Message)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to get copilot response", "err", err)
+		return nil, err
+	}
+
+	copilot.AnalysisResult = resp.LlmResponse
+
+	level.Info(s.logger).Log("during", "llm > copilot", "usage prompt tokens", resp.PromptTokens, "completion tokens", resp.CompletionTokens)
+
+	err = s.analysis.CreateAnalysis(ctx, copilot)
+
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to save copilot", "err", err)
+		return nil, err
+	}
+
+	return copilot, nil
+}
+
 var accents = strings.NewReplacer(
 	"á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a",
 	"é", "e", "è", "e", "ê", "e", "ë", "e",
@@ -208,8 +234,4 @@ func matchedKeywords(keywords []string, text string) []string {
 	}
 
 	return matched
-}
-
-func (s *service) GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error) {
-	return s.analysis.GetBidAnalysis(ctx, analysis)
 }

@@ -6,18 +6,20 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/agents"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 type Analysis struct {
-	ID        *bson.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Finished  bool           `json:"finished" bson:"finished"`
-	BidID     string         `json:"bid_id" bson:"process_id,omitempty"`
-	UserID    string         `json:"user_id" bson:"user_id,omitempty"`
-	CreatedAt *time.Time     `json:"created_at" bson:"created_at,omitempty"`
-	UpdatedAt *time.Time     `json:"updated_at" bson:"updated_at,omitempty"`
+	ID        *bson.ObjectID   `json:"id,omitempty" bson:"_id,omitempty"`
+	Finished  bool             `json:"finished" bson:"finished"`
+	BidID     string           `json:"bid_id" bson:"process_id,omitempty"`
+	UserID    string           `json:"user_id" bson:"user_id,omitempty"`
+	CreatedAt *time.Time       `json:"created_at" bson:"created_at,omitempty"`
+	UpdatedAt *time.Time       `json:"updated_at" bson:"updated_at,omitempty"`
+	AgentType agents.AgentType `json:"agent_type" bson:"agent_type"`
 
 	Base64           string   `json:"base64,omitempty" bson:"-"`
 	Content          string   `json:"content,omitempty" bson:"content,omitempty"`
@@ -30,6 +32,10 @@ type Analysis struct {
 	Keywords         []string `json:"keywords,omitempty" bson:"keywords,omitempty"`
 	Score            int32    `json:"score" bson:"score"`
 	AnalysisResult   string   `json:"analysis_result,omitempty" bson:"analysis_result,omitempty"`
+
+	// copilot
+	Message     string `json:"message"`
+	LlmResponse string `json:"llm_response"`
 }
 
 func (a *Analysis) Unmarshal(v interface{}) error {

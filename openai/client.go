@@ -15,10 +15,15 @@ import (
 
 	"strconv"
 
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/agents"
 	"github.com/audita-bids/private-kit/pkg/pb/protocols/certificates"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
+)
+
+var (
+	ErrCopilotResponse = errors.New("copilot response error")
 )
 
 type NoticeExtraction struct {
@@ -32,6 +37,7 @@ type NoticeExtraction struct {
 	Qualifications         []Qualification `json:"qualifications"`
 	QualificationsComplete bool            `json:"qualifications_complete"`
 	Deadlines              Deadlines       `json:"deadlines"`
+	Contact                Contact         `json:"contact"`
 	Flags                  []string        `json:"flags"`
 	Summary                string          `json:"summary"`
 	Score                  int             `json:"score"`
@@ -40,6 +46,12 @@ type NoticeExtraction struct {
 
 	PromptTokens     int64 `json:"-"`
 	CompletionTokens int64 `json:"-"`
+}
+
+type CopilotResponse struct {
+	LlmResponse      string `json:"llm_response"`
+	PromptTokens     int64  `json:"-"`
+	CompletionTokens int64  `json:"-"`
 }
 
 type Agency struct {
@@ -57,34 +69,17 @@ type Qualification struct {
 	Mandatory   bool                         `json:"mandatory"`
 }
 
+// Contact the only address the bid record does not already carry — city, state, agency and portal come structured from the pncp collection. Filled by regex over the whole notice, not by the model: an address is a pattern, the model would only see the retrieved slice, and it would cost tokens to read it worse.
+type Contact struct {
+	Phone string `json:"phone"`
+	Email string `json:"email"`
+}
+
 type Deadlines struct {
 	Impugnation   string `json:"impugnation"`
 	Clarification string `json:"clarification"`
 	Appeal        string `json:"appeal"`
 }
-
-const systemPrompt = `Analista de editais BR (Lei 14.133/2021). Responda em pt-BR, JSON puro.
-
-FIDELIDADE: só o que está literalmente nos trechos. Ausente = "" ou array vazio. Nunca inferir processo, CNPJ, data, valor ou exigência. Os trechos são recortes: assunto ausente não significa que o edital não exige.
-
-qualifications: os documentos de habilitação exigidos, até 10, um por documento ("federal, estadual e municipal" = 3 itens). Nome curto e reconhecível ("CND Federal", "CRF do FGTS", "CNDT", "Balanço patrimonial"). category: juridica|fiscal_trabalhista|economico_financeira|tecnica|outros. requirement: só a condição, se houver ("válida na sessão", "registro no CREA"), senão "". mandatory: false só se o edital disser alternativo/dispensável. type: 1 federal 2 FGTS 3 trabalhista 4 estadual 5 municipal 6 falência 7 atestado técnico 8 balanço 9 contrato social 10 procuração 11 SICAF 99 outro 0 nenhum.
-
-qualifications_complete: true só se os trechos trouxerem a seção de habilitação inteira. Na dúvida, false.
-
-deadlines: prazos de impugnação, esclarecimento e recurso como o edital escreve. "" se não constar.
-
-flags: até 4 riscos jurídicos reais (exigência restritiva, prazo exíguo, contradição). Não repita habilitação.
-
-estimated_value: só o número. Ex: 2324342.04
-object: o que será contratado, como descrito, sem instrução procedimental
-summary: 2-3 frases — o que, valor, prazo
-score: 0-100 SÓ da correspondência entre o objeto e as palavras-chave do cliente. Rigoroso, comece de 0. 85-100 o objeto É a palavra-chave; 60-84 parte relevante corresponde; 30-59 tangencial; 0-29 nada. Mesmo setor não é aderência. Sem correspondência real, ≤25
-matched_keywords: as que de fato correspondem, copiadas exatamente como o cliente escreveu; vazio se nenhuma. Variação de grafia, número e gênero conta: "tecnologia" casa com "tecnológica", "poço" com "poços". Palavra diferente não: "merenda escolar" não casa com "uniforme escolar"
-score_rationale: 1 frase citando o que casou, ou que nada casou
-
-COERÊNCIA (obrigatória): preencha matched_keywords ANTES de decidir o score. Toda palavra-chave que você citar em score_rationale tem que estar em matched_keywords. matched_keywords vazio ⇒ score ≤ 25, sem exceção. Nunca escreva "alta correspondência" com matched_keywords vazio.
-
-qualifications: no máximo 10 itens. Nome do documento em até 120 caracteres.`
 
 type Client struct {
 	client *openai.Client
@@ -99,21 +94,6 @@ func NewOpenaiClient() *Client {
 	return &Client{client: &c}
 }
 
-// ragQueries habilitação gets two queries, not one: a single generic one ranks the same fiscal chunks over and over and the técnica section never surfaces. More than two stops paying for itself — the chunks start repeating and the dedupe throws them away.
-var ragQueries = map[string]string{
-	"object":              "1. DO OBJETO cláusula primeira objeto contratação descrição serviço obra fornecimento",
-	"preamble":            "edital processo administrativo número data da sessão pública abertura valor total estimado modalidade pregão eletrônico critério de julgamento menor preço impugnação esclarecimento",
-	"habilitacao_fiscal":  "documentos de habilitação regularidade fiscal e trabalhista certidão negativa de débitos federais estadual municipal FGTS CNDT ato constitutivo contrato social",
-	"habilitacao_tecnica": "qualificação técnica atestado de capacidade técnica registro no conselho CREA CRC qualificação econômico-financeira balanço patrimonial certidão negativa de falência",
-}
-
-var ragNPerField = map[string]int{
-	"object":              2,
-	"preamble":            2,
-	"habilitacao_fiscal":  3,
-	"habilitacao_tecnica": 3,
-}
-
 const maxDocChars = 120_000
 
 // directChars below this the whole notice goes to the model instead of the rag. Every character is paid on every analysis, so this is a budget, not a quality dial: past it the rag picks the ten chunks that matter and the rest never reaches the model.
@@ -122,6 +102,9 @@ var (
 	contextChars    = handleEnvInt("OPENAI_CONTEXT_CHARS", 5_000)
 	maxOutputTokens = handleEnvInt("OPENAI_MAX_OUTPUT_TOKENS", 600)
 	model           = handleModel()
+
+	copilotOutputTokens = handleEnvInt("OPENAI_COPILOT_OUTPUT_TOKENS", 450)
+	copilotInputChars   = handleEnvInt("OPENAI_COPILOT_INPUT_CHARS", 2_000)
 )
 
 // handleModel the extraction is legal reading, so the model is worth changing without a deploy.
@@ -237,6 +220,59 @@ func filterSections(text string) string {
 	return text
 }
 
+var emailRe = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+
+var phoneRe = regexp.MustCompile(`(?:0800[\s.\-]?\d{3}[\s.\-]?\d{4})|(?:\(\d{2}\)\s?\d{4,5}[\s.\-]?\d{4})|(?:\b\d{2}[\s.\-]\d{4,5}[\s.\-]\d{4}\b)`)
+
+var (
+	deskHints    = []string{"licita", "compras", "pregao", "pregão", "cpl", "comissao", "comissão"}
+	genericHints = []string{"telefone", "fone", "e-mail", "email", "contato"}
+)
+
+func contactFromText(text string) Contact {
+	var contact Contact
+
+	low := strings.ToLower(text)
+
+	for _, hints := range [][]string{deskHints, genericHints} {
+		for _, hint := range hints {
+			for i := 0; ; {
+				j := strings.Index(low[i:], hint)
+
+				if j < 0 {
+					break
+				}
+
+				at := i + j
+
+				// Depois do gancho primeiro. "Setor de Licitações: x@y" põe o
+				// endereço à frente do rótulo, e olhar para trás junto faria a
+				// ouvidoria citada no parágrafo anterior ganhar da licitação.
+				for _, window := range []string{
+					text[at:min(at+400, len(text))],
+					text[max(0, at-200):at],
+				} {
+					if contact.Email == "" {
+						contact.Email = emailRe.FindString(window)
+					}
+
+					if contact.Phone == "" {
+						contact.Phone = strings.Join(strings.Fields(phoneRe.FindString(window)), "")
+					}
+				}
+
+				if contact.Email != "" && contact.Phone != "" {
+					return contact
+				}
+
+				i = at + len(hint)
+			}
+		}
+	}
+
+	return contact
+}
+
 func (c *Client) AnalyzeNotice(ctx context.Context, r io.Reader, keywords []string) (*NoticeExtraction, string, error) {
 	text, err := ExtractText(r)
 	if err != nil {
@@ -249,8 +285,10 @@ func (c *Client) AnalyzeNotice(ctx context.Context, r io.Reader, keywords []stri
 		return nil, "", fmt.Errorf("%w: %d caracteres úteis", ErrEmptyPDF, len(text))
 	}
 
+	contact := contactFromText(text)
+
 	if len(text) <= directChars {
-		return c.extract(ctx, map[string][]string{"documento": {text}}, keywords)
+		return c.extract(ctx, map[string][]string{"documento": {text}}, keywords, contact)
 	}
 
 	// Large document: keep only the sections the extraction needs, cap the
@@ -260,7 +298,7 @@ func (c *Client) AnalyzeNotice(ctx context.Context, r io.Reader, keywords []stri
 		text = strings.ToValidUTF8(text[:maxDocChars], "")
 	}
 	if len(text) <= directChars {
-		return c.extract(ctx, map[string][]string{"documento": {text}}, keywords)
+		return c.extract(ctx, map[string][]string{"documento": {text}}, keywords, contact)
 	}
 
 	rag, err := NewRAG()
@@ -277,10 +315,49 @@ func (c *Client) AnalyzeNotice(ctx context.Context, r io.Reader, keywords []stri
 		return nil, "", fmt.Errorf("rag batch: %w", err)
 	}
 
-	return c.extract(ctx, fieldChunks, keywords)
+	return c.extract(ctx, fieldChunks, keywords, contact)
 }
 
-func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, keywords []string) (*NoticeExtraction, string, error) {
+func (c *Client) MessageCopilot(ctx context.Context, prompt string) (*CopilotResponse, error) {
+	systemPrompt := HandlePrompt(agents.AgentType_COPILOT)
+	systemPrompt = compactText(systemPrompt)
+
+	if runes := []rune(prompt); len(runes) > copilotInputChars {
+		prompt = string(runes[:copilotInputChars])
+	}
+
+	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: model,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(systemPrompt),
+			openai.UserMessage(prompt),
+		},
+		MaxCompletionTokens: openai.Int(int64(copilotOutputTokens)),
+		Temperature:         openai.Float(0),
+	})
+
+	if err != nil {
+		return nil, ErrCopilotResponse
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, ErrCopilotResponse
+	}
+
+	choice := resp.Choices[0]
+
+	if choice.FinishReason == "length" {
+		return nil, fmt.Errorf("resposta truncada em %d tokens: suba OPENAI_COPILOT_OUTPUT_TOKENS", resp.Usage.CompletionTokens)
+	}
+
+	return &CopilotResponse{
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		LlmResponse:      choice.Message.Content,
+	}, nil
+}
+
+func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, keywords []string, contact Contact) (*NoticeExtraction, string, error) {
 	var sb strings.Builder
 
 	sb.WriteString("### Perfil do cliente\n")
@@ -343,10 +420,12 @@ func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, k
 		sb.WriteString(fmt.Sprintf("### %s\n%s\n\n", field, buildContext(picked[field])))
 	}
 
+	prompt := HandlePrompt(agents.AgentType_ANALYSIS)
+
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: model,
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(systemPrompt),
+			openai.SystemMessage(prompt),
 			openai.UserMessage(sb.String()),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
@@ -354,7 +433,7 @@ func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, k
 				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
 					Name:   "notice_analysis",
 					Strict: openai.Bool(true),
-					Schema: ResumeNoticeSchema(),
+					Schema: resumeNoticeSchema(),
 				},
 			},
 		},
@@ -382,6 +461,7 @@ func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, k
 		return nil, "", fmt.Errorf("parse: %w", err)
 	}
 
+	result.Contact = contact
 	result.PromptTokens = usage.PromptTokens
 	result.CompletionTokens = usage.CompletionTokens
 
@@ -398,13 +478,15 @@ func buildContext(chunks []string) string {
 
 func (c *Client) ResumeBase64(_ context.Context, b64 string) (io.Reader, error) {
 	raw, err := base64.StdEncoding.DecodeString(b64)
+
 	if err != nil {
 		return nil, errors.New("error trying to decode b64 document")
 	}
+
 	return bytes.NewReader(raw), nil
 }
 
-func ResumeNoticeSchema() map[string]interface{} {
+func resumeNoticeSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":                 "object",
 		"additionalProperties": false,
@@ -473,4 +555,47 @@ func ResumeNoticeSchema() map[string]interface{} {
 			},
 		},
 	}
+}
+
+func HandlePrompt(t agents.AgentType) string {
+	switch t {
+	case agents.AgentType_ANALYSIS:
+		return `Analista de editais BR (Lei 14.133/2021). Responda em pt-BR, JSON puro.
+                FIDELIDADE: só o que está literalmente nos trechos. Ausente = "" ou array vazio. Nunca inferir processo, CNPJ, data, valor ou exigência. Os trechos são recortes: assunto ausente não significa que o edital não exige.
+                qualifications: os documentos de habilitação exigidos, até 10, um por documento ("federal, estadual e municipal" = 3 itens). Nome curto e reconhecível ("CND Federal", "CRF do FGTS", "CNDT", "Balanço patrimonial"). category: juridica|fiscal_trabalhista|economico_financeira|tecnica|outros. requirement: só a condição, se houver ("válida na sessão", "registro no CREA"), senão "". mandatory: false só se o edital disser alternativo/dispensável. type: 1 federal 2 FGTS 3 trabalhista 4 estadual 5 municipal 6 falência 7 atestado técnico 8 balanço 9 contrato social 10 procuração 11 SICAF 99 outro 0 nenhum.
+                qualifications_complete: true só se os trechos trouxerem a seção de habilitação inteira. Na dúvida, false.
+                deadlines: prazos de impugnação, esclarecimento e recurso como o edital escreve. "" se não constar.
+                flags: até 4 riscos jurídicos reais (exigência restritiva, prazo exíguo, contradição). Não repita habilitação.
+                estimated_value: só o número. Ex: 2324342.04
+				object: o que será contratado, como descrito, sem instrução procedimental
+				summary: 2-3 frases — o que, valor, prazo
+				score: 0-100 SÓ da correspondência entre o objeto e as palavras-chave do cliente. Rigoroso, comece de 0. 85-100 o objeto É a palavra-chave; 60-84 parte relevante corresponde; 30-59 tangencial; 0-29 nada. Mesmo setor não é aderência. Sem correspondência real, ≤25
+				matched_keywords: as que de fato correspondem, copiadas exatamente como o cliente escreveu; vazio se nenhuma. Variação de grafia, número e gênero conta: "tecnologia" casa com "tecnológica", "poço" com "poços". Palavra diferente não: "merenda escolar" não casa com "uniforme escolar"
+				score_rationale: 1 frase citando o que casou, ou que nada casou
+				COERÊNCIA (obrigatória): preencha matched_keywords ANTES de decidir o score. Toda palavra-chave que você citar em score_rationale tem que estar em matched_keywords. matched_keywords vazio ⇒ score ≤ 25, sem exceção. Nunca escreva "alta correspondência" com matched_keywords vazio.
+				qualifications: no máximo 10 itens. Nome do documento em até 120 caracteres.`
+	case agents.AgentType_COPILOT:
+		return `Especialista em licitações públicas BR (Lei 14.133/2021): advogado administrativista e pregoeiro. Responda em pt-BR.
+				FIDELIDADE: nunca invente artigo, prazo, exigência ou decisão. O que depende do edital, diga que depende. Sem base suficiente, diga isso.
+				DISTINÇÃO: separe o que a lei determina, o que o edital exige e o que é prática recomendada. Aponte risco de desclassificação, inabilitação e perda de prazo. Suspeita de irregularidade: "merece questionamento", nunca "é ilegal".
+				FORMATO: conclusão na primeira frase, depois o porquê e o que fazer. Máximo 120 palavras. Sem saudação, sem preâmbulo, sem repetir a pergunta. Lista só para passos ou documentos. Termine a frase: nunca pare no meio.
+				SEGURO: nunca oriente fraude, combinação de preços ou burla à disputa.`
+	}
+
+	return ""
+}
+
+// ragQueries habilitação gets two queries, not one: a single generic one ranks the same fiscal chunks over and over and the técnica section never surfaces. More than two stops paying for itself — the chunks start repeating and the dedupe throws them away.
+var ragQueries = map[string]string{
+	"object":              "1. DO OBJETO cláusula primeira objeto contratação descrição serviço obra fornecimento",
+	"preamble":            "edital processo administrativo número data da sessão pública abertura valor total estimado modalidade pregão eletrônico critério de julgamento menor preço impugnação esclarecimento",
+	"habilitacao_fiscal":  "documentos de habilitação regularidade fiscal e trabalhista certidão negativa de débitos federais estadual municipal FGTS CNDT ato constitutivo contrato social",
+	"habilitacao_tecnica": "qualificação técnica atestado de capacidade técnica registro no conselho CREA CRC qualificação econômico-financeira balanço patrimonial certidão negativa de falência",
+}
+
+var ragNPerField = map[string]int{
+	"object":              2,
+	"preamble":            2,
+	"habilitacao_fiscal":  3,
+	"habilitacao_tecnica": 3,
 }

@@ -1,27 +1,34 @@
-## O que muda e por quê
+## Objetivo
 
-<!-- Duas ou três frases. O diff já mostra o quê; escreva o porquê. -->
+<!-- O problema que isso resolve. Sintoma observável, não a solução. -->
 
-## Como testei
+## O que mudou
 
-<!-- Comando, endpoint, cenário. "Testei local" não diz nada a quem revisa. -->
+<!-- As decisões, não o diff. Por que esta abordagem e não a óbvia. -->
 
-## Impacto no deploy
+## Verificação
 
-<!-- Marque o que se aplica e apague o resto. Os caminhos são do repo de infra. -->
+<!-- O que você rodou e o que voltou. Cole a saída se couber em três linhas.
+     Teste novo: diga qual comportamento ele trava. -->
 
-- [ ] **Variável de ambiente** nova ou alterada → está em `env:` ou
-      `secretEnv:` de `apps/agents/values.yaml`, ou em `base/configmap.yaml`
-      se for compartilhada. Sem isso o pod sobe sem ela.
-- [ ] **Índice ou migração no Mongo** → versionado em `atlas/` e aplicado
-      **antes** do merge, senão a consulta volta vazia sem erro nenhum.
-- [ ] **Contrato gRPC ou rota HTTP** mudou → quem consome já aguenta as duas
-      versões, ou entra no mesmo deploy.
-- [ ] Nada acima.
+## Risco e rollback
+
+<!-- O que quebra se isso estiver errado, e como você percebe. Se for "nada",
+     escreva o motivo. -->
+
+## Antes do merge
+
+- [ ] Env nova ou alterada → declarada em `apps/agents/values.yaml` e no
+      `values-staging.yaml`, ou em `base/configmap.yaml` se for compartilhada
+- [ ] Índice ou migração no Mongo → aplicada **antes** do merge; sem ela a
+      consulta volta vazia, sem erro
+- [ ] Contrato gRPC ou rota HTTP mudou → quem consome aguenta as duas versões,
+      ou entra no mesmo deploy
+- [ ] Nada acima
 
 ---
 
-O merge na `main` **vai para produção sem aprovação manual**: publica
-`ghcr.io/audita-bids/agents:<sha>` e commita a tag em
-`apps/agents/values-production.yaml` no repo de infra; o ArgoCD sincroniza a
-seguir. Rollback é reverter o commit `ci(agents): deploy <sha>` lá.
+Merge na `main` publica `ghcr.io/audita-bids/agents:<sha>` e fixa a tag em
+`apps/agents/values-production.yaml`, sem aprovação manual. Merge na `staging`
+faz o mesmo em `values-staging.yaml`. Rollback é reverter o commit
+`ci(agents): deploy …` no repo de infra.

@@ -17,6 +17,7 @@ type GRPCServer struct {
 
 	postNoticeAnalysis grpctransport.Handler
 	getAnalysis        grpctransport.Handler
+	postCopilot        grpctransport.Handler
 }
 
 func NewGRPCServer(endpoints endpoint.EndpointSetup) agents.AgentsServiceServer {
@@ -35,6 +36,12 @@ func NewGRPCServer(endpoints endpoint.EndpointSetup) agents.AgentsServiceServer 
 			endpoints.GetAnalysis,
 			decodeGRPCGetAnalysisRequest,
 			encodeGRPCGetAnalysisResponse,
+			options...,
+		),
+		postCopilot: grpctransport.NewServer(
+			endpoints.PostCopilot,
+			decodeGRPCPostCopilotRequest,
+			encodeGRPCPostCopilotResponse,
 			options...,
 		),
 	}
@@ -58,6 +65,52 @@ func (s *GRPCServer) GetAnalysis(ctx context.Context, req *agents.GetAnalysisReq
 	}
 
 	return resp.(*agents.AgentsComplete), nil
+}
+
+func (s *GRPCServer) PostCopilot(ctx context.Context, req *agents.PostCopilotRequest) (*agents.AgentsComplete, error) {
+	_, resp, err := s.postCopilot.ServeGRPC(ctx, req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.(*agents.AgentsComplete), nil
+}
+
+func decodeGRPCPostCopilotRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
+	req := grpcReq.(*agents.PostCopilotRequest)
+
+	return &store.Analysis{
+		Message:   req.Message,
+		UserID:    req.UserId,
+		AgentType: agents.AgentType_COPILOT,
+	}, nil
+}
+
+func encodeGRPCPostCopilotResponse(_ context.Context, grpcResp interface{}) (interface{}, error) {
+	resp := grpcResp.(*endpoint.Resp)
+	if resp.Error != nil {
+		return nil, resp.Error
+	}
+
+	return toCopilotComplete(resp.Items.(*store.Analysis)), nil
+}
+
+func toCopilotComplete(a *store.Analysis) *agents.AgentsComplete {
+	out := &agents.AgentsComplete{
+		Finished:    true,
+		UserId:      a.UserID,
+		Type:        agents.AgentType_COPILOT,
+		UserPrompt:  a.Message,
+		LlmResponse: a.AnalysisResult,
+	}
+	if a.ID != nil {
+		out.Id = a.ID.Hex()
+	}
+	if a.CreatedAt != nil {
+		out.CreatedAt = a.CreatedAt.Format(time.RFC3339)
+	}
+	return out
 }
 
 func decodeGRPCPostNoticeAnalysisRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {

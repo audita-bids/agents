@@ -49,6 +49,15 @@ func (mw *loggingMiddleware) GetAnalysis(ctx context.Context, request *store.Ana
 	return mw.next.GetAnalysis(ctx, request)
 }
 
+func (mw *loggingMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	defer func() {
+		mw.logger.Log("method", "PostCopilot", "status", "completed")
+	}()
+
+	mw.logger.Log("method", "PostCopilot", "status", "started")
+	return mw.next.PostCopilot(ctx, request)
+}
+
 func RecoveryMiddleware(logger log.Logger) Middleware {
 	return func(next Service) Service {
 		return &recoveryMiddleware{
@@ -85,6 +94,17 @@ func (mw *recoveryMiddleware) GetAnalysis(ctx context.Context, request *store.An
 	return mw.next.GetAnalysis(ctx, request)
 }
 
+func (mw *recoveryMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (analysis *store.Analysis, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			mw.logger.Log("method", "PostCopilot", "status", "recovered", "error", r)
+			err = fmt.Errorf("recovered from panic: %v", r)
+		}
+	}()
+
+	return mw.next.PostCopilot(ctx, request)
+}
+
 func EventMiddleware(logger log.Logger) Middleware {
 	return func(next Service) Service {
 		return &eventMiddleware{
@@ -107,6 +127,10 @@ func (mw *eventMiddleware) PostAnalysis(ctx context.Context, request *store.Anal
 
 func (mw *eventMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
 	return mw.next.GetAnalysis(ctx, request)
+}
+
+func (mw *eventMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	return mw.next.PostCopilot(ctx, request)
 }
 
 /*func (mw *eventMiddleware) CreateClient(ctx context.Context, request *store.Client) (v *store.Client, err error) {
@@ -178,4 +202,8 @@ func (mw *cacheMiddleware) GetAnalysis(ctx context.Context, request *store.Analy
 	}
 
 	return mw.next.GetAnalysis(ctx, request)
+}
+
+func (mw *cacheMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	return mw.next.PostCopilot(ctx, request)
 }
