@@ -44,7 +44,7 @@ func NewService(logger log.Logger, db *mongo.Database, redis *redis.Client) Serv
 			analysis: &store.AnalysisStore{
 				C: analysis,
 			},
-			openai:  openai.NewOpenaiClient(),
+			openai:  openai.NewOpenaiClient(logger),
 			clients: client.NewClientServiceClient(connectors.Client()),
 		}
 		svc = LoggingMiddleware(logger)(svc)

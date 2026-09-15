@@ -17,6 +17,8 @@ import (
 
 	"github.com/audita-bids/private-kit/pkg/pb/protocols/agents"
 	"github.com/audita-bids/private-kit/pkg/pb/protocols/certificates"
+	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
@@ -83,15 +85,21 @@ type Deadlines struct {
 
 type Client struct {
 	client *openai.Client
+	logger log.Logger
 }
 
-func NewOpenaiClient() *Client {
+func NewOpenaiClient(logger log.Logger) *Client {
 	v, ok := os.LookupEnv("OPENAI_API_KEY")
+
 	if !ok {
 		panic("OPENAI_API_KEY not found")
 	}
+
 	c := openai.NewClient(option.WithAPIKey(v))
-	return &Client{client: &c}
+	return &Client{
+		client: &c,
+		logger: logger,
+	}
 }
 
 const maxDocChars = 120_000
@@ -100,7 +108,7 @@ const maxDocChars = 120_000
 var (
 	directChars     = handleEnvInt("OPENAI_DIRECT_CHARS", 6_000)
 	contextChars    = handleEnvInt("OPENAI_CONTEXT_CHARS", 5_000)
-	maxOutputTokens = handleEnvInt("OPENAI_MAX_OUTPUT_TOKENS", 600)
+	maxOutputTokens = handleEnvInt("OPENAI_MAX_OUTPUT_TOKENS", 20000)
 	model           = handleModel()
 
 	copilotOutputTokens = handleEnvInt("OPENAI_COPILOT_OUTPUT_TOKENS", 450)
@@ -113,7 +121,7 @@ func handleModel() string {
 		return v
 	}
 
-	return openai.ChatModelGPT4oMini
+	return openai.ChatModelGPT5_6Luna
 }
 
 func handleEnvInt(key string, def int) int {
@@ -333,14 +341,15 @@ func (c *Client) MessageCopilot(ctx context.Context, prompt string) (*CopilotRes
 			openai.UserMessage(prompt),
 		},
 		MaxCompletionTokens: openai.Int(int64(copilotOutputTokens)),
-		Temperature:         openai.Float(0),
 	})
 
 	if err != nil {
+		level.Error(c.logger).Log("msg", "copilot response error", "err", err)
 		return nil, ErrCopilotResponse
 	}
 
 	if len(resp.Choices) == 0 {
+		level.Error(c.logger).Log("msg", "copilot response empty")
 		return nil, ErrCopilotResponse
 	}
 
@@ -438,7 +447,6 @@ func (c *Client) extract(ctx context.Context, fieldChunks map[string][]string, k
 			},
 		},
 		MaxCompletionTokens: openai.Int(int64(maxOutputTokens)),
-		Temperature:         openai.Float(0),
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("openai: %w", err)
@@ -577,8 +585,15 @@ func HandlePrompt(t agents.AgentType) string {
 	case agents.AgentType_COPILOT:
 		return `Especialista em licitações públicas BR (Lei 14.133/2021): advogado administrativista e pregoeiro. Responda em pt-BR.
 				FIDELIDADE: nunca invente artigo, prazo, exigência ou decisão. O que depende do edital, diga que depende. Sem base suficiente, diga isso.
-				DISTINÇÃO: separe o que a lei determina, o que o edital exige e o que é prática recomendada. Aponte risco de desclassificação, inabilitação e perda de prazo. Suspeita de irregularidade: "merece questionamento", nunca "é ilegal".
-				FORMATO: conclusão na primeira frase, depois o porquê e o que fazer. Máximo 120 palavras. Sem saudação, sem preâmbulo, sem repetir a pergunta. Lista só para passos ou documentos. Termine a frase: nunca pare no meio.
+				FATOS DA LEI (valem acima da sua memória, que mistura a lei antiga do pregão):
+				- Impugnar ou pedir esclarecimento: até 3 dias úteis antes da abertura; a resposta sai em até 3 dias úteis (art. 164).
+				- Recurso: intenção imediata na sessão, sob pena de preclusão; razões em 3 dias úteis da intimação ou da ata (art. 165).
+				- Atestado técnico: quantidade mínima exigida até 50% das parcelas relevantes, sem limite de tempo ou local (art. 67, §2º). Acima disso, a exigência merece questionamento.
+				- ME e EPP apresentam a documentação fiscal e trabalhista mesmo com restrição e têm 5 dias úteis, prorrogáveis por igual período, contados de quando declaradas vencedoras, para regularizar (LC 123/2006, art. 43, §1º). O benefício é justamente para a certidão fiscal e trabalhista, que é documento de habilitação: certidão vencida de ME ou EPP não inabilita na sessão, e o edital não pode retirar o prazo. Não vale quando o valor estimado passa do teto de receita da EPP, nem para quem já contratou acima desse teto no ano (Lei 14.133, art. 4º, §§1º e 2º).
+				- Termos: certidão, atestado, balanço e contrato social são habilitação e o risco é INABILITAÇÃO. Preço, amostra e especificação são proposta e o risco é DESCLASSIFICAÇÃO. Nunca troque.
+				CONCLUSÃO: responda pela regra do caso concreto, não pela regra geral. Se uma exceção protege quem pergunta, a primeira frase é a exceção.
+				DISTINÇÃO: separe o que a lei determina, o que o edital exige e o que é prática recomendada. Aponte risco de desclassificação, inabilitação e perda de prazo. Suspeita de irregularidade: "merece questionamento" e o caminho (impugnação, esclarecimento, recurso). Nunca "ilegal", "inconstitucional" ou "nula": quem decide isso é a administração ou o tribunal.
+				FORMATO: conclusão na primeira frase, depois o porquê e o que fazer. Máximo 120 palavras. Sem saudação, sem preâmbulo, sem repetir a pergunta. Lista só para passos ou documentos.
 				SEGURO: nunca oriente fraude, combinação de preços ou burla à disputa.`
 	}
 
