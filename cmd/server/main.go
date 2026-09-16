@@ -110,7 +110,7 @@ func main() {
 			Logger:         logger,
 			EnableEndpoint: true,
 			EnableHTTP:     true,
-			ServiceName:    "contracts",
+			ServiceName:    "agents",
 			Ready:          ready,
 		}
 
