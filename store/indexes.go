@@ -30,9 +30,14 @@ func persist(ctx context.Context, c *mongo.Collection, indexes []mongo.IndexMode
 	return errs
 }
 
-// PersistIndexes an analysis is looked up by the pair that produced it, and never any other way.
+// PersistIndexes an analysis is looked up by the pair that produced it, and never any other way. A runner, by what it runs.
 func PersistIndexes(ctx context.Context, db *mongo.Database) error {
-	return persist(ctx, db.Collection("analysis"), []mongo.IndexModel{
-		index(bson.D{{Key: "user_id", Value: 1}, {Key: "process_id", Value: 1}}),
-	})
+	return errors.Join(
+		persist(ctx, db.Collection("analysis"), []mongo.IndexModel{
+			index(bson.D{{Key: "user_id", Value: 1}, {Key: "process_id", Value: 1}}),
+		}),
+		persist(ctx, db.Collection("runners"), []mongo.IndexModel{
+			uniqueIndex(bson.D{{Key: "runner_id", Value: 1}, {Key: "runner_type", Value: 1}}),
+		}),
+	)
 }

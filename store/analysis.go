@@ -21,7 +21,7 @@ type Analysis struct {
 	UpdatedAt *time.Time       `json:"updated_at" bson:"updated_at,omitempty"`
 	AgentType agents.AgentType `json:"agent_type" bson:"agent_type"`
 
-	Base64           string   `json:"base64,omitempty" bson:"-"`
+	Base64           string   `json:"base64,omitempty" bson:"base64,omitempty"`
 	Content          string   `json:"content,omitempty" bson:"content,omitempty"`
 	Object           string   `json:"object,omitempty" bson:"object,omitempty"`
 	Modality         string   `json:"modality,omitempty" bson:"modality,omitempty"`
@@ -36,6 +36,12 @@ type Analysis struct {
 	// copilot
 	Message     string `json:"message"`
 	LlmResponse string `json:"llm_response"`
+}
+
+func (a *Analysis) Marshal() []byte {
+	b, _ := json.Marshal(a)
+
+	return b
 }
 
 func (a *Analysis) Unmarshal(v interface{}) error {
@@ -75,6 +81,27 @@ func (store *AnalysisStore) CreateAnalysis(ctx context.Context, analysis *Analys
 	_, err := store.C.InsertOne(ctx, analysis)
 
 	return err
+}
+
+func (store *AnalysisStore) UpdateAnalysis(ctx context.Context, analysis *Analysis) error {
+	_, err := store.C.ReplaceOne(ctx, bson.M{"_id": analysis.ID}, analysis)
+
+	return err
+}
+
+func (store *AnalysisStore) GetAnalysis(ctx context.Context, analysis *Analysis) (*Analysis, error) {
+	filter := &bson.M{
+		"_id": analysis.ID,
+	}
+
+	err := store.C.FindOne(ctx, filter).
+		Decode(analysis)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return analysis, nil
 }
 
 func (store *AnalysisStore) GetBidAnalysis(ctx context.Context, analysis *Analysis) (*Analysis, error) {

@@ -13,6 +13,7 @@ import (
 	"agents/pkg/service"
 	"agents/transports"
 
+	"github.com/audita-bids/private-kit/kafka"
 	"github.com/audita-bids/private-kit/middlewares"
 	"github.com/audita-bids/private-kit/mongo"
 	"github.com/audita-bids/private-kit/pkg/lib"
@@ -43,15 +44,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	database := db.Database("bids")
+	database := db.Database("agents")
 
 	var (
 		grpcServer *grpc.Server
 
-		svc         = service.NewService(logger, database, redis.GetClient())
-		endpoints   = endpoint.NewEndpointSetup(svc, logger)
-		grpcHandler = transports.NewGRPCServer(*endpoints)
-		// kafkaHandler = transports.NewKafkaConsumers(*endpoints)
+		svc          = service.NewService(logger, database, redis.GetClient())
+		endpoints    = endpoint.NewEndpointSetup(svc, logger)
+		grpcHandler  = transports.NewGRPCServer(*endpoints)
+		kafkaHandler = transports.NewKafkaConsumers(*endpoints)
 		// httpHandler = transports.NewHTTPServer(*endpoints, logger)
 
 		// httpServer *httpCaller.Server
@@ -132,10 +133,10 @@ func main() {
 			}
 		})
 	}
-	/*{
+	{
 		kafkaListener := kafka.NewListener(
-			[]string{"kafka:29092"},
-			"pncp",
+			[]string{os.Getenv("KAFKA_BROKER")},
+			"agents",
 			kafkaHandler,
 		)
 
@@ -145,7 +146,7 @@ func main() {
 		}, func(err error) {
 			level.Info(logger).Log("transport", "kafka", "msg", "consumer stopping")
 		})
-	}*/
+	}
 	/*{
 		httpListener, err := net.Listen("tcp", cfg.HttpAddr)
 		if err != nil {

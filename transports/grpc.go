@@ -17,6 +17,7 @@ type GRPCServer struct {
 
 	postNoticeAnalysis grpctransport.Handler
 	getAnalysis        grpctransport.Handler
+	getAsyncRunner     grpctransport.Handler
 	postCopilot        grpctransport.Handler
 }
 
@@ -36,6 +37,12 @@ func NewGRPCServer(endpoints endpoint.EndpointSetup) agents.AgentsServiceServer 
 			endpoints.GetAnalysis,
 			decodeGRPCGetAnalysisRequest,
 			encodeGRPCGetAnalysisResponse,
+			options...,
+		),
+		getAsyncRunner: grpctransport.NewServer(
+			endpoints.GetAsyncRunner,
+			decodeGRPCGetAsyncRunnerRequest,
+			encodeGRPCGetAsyncRunnerResponse,
 			options...,
 		),
 		postCopilot: grpctransport.NewServer(
@@ -65,6 +72,16 @@ func (s *GRPCServer) GetAnalysis(ctx context.Context, req *agents.GetAnalysisReq
 	}
 
 	return resp.(*agents.AgentsComplete), nil
+}
+
+func (s *GRPCServer) GetAsyncRunner(ctx context.Context, req *agents.GetAsyncRunnerRequest) (*agents.AgentsAsyncRunnerComplete, error) {
+	_, resp, err := s.getAsyncRunner.ServeGRPC(ctx, req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.(*agents.AgentsAsyncRunnerComplete), nil
 }
 
 func (s *GRPCServer) PostCopilot(ctx context.Context, req *agents.PostCopilotRequest) (*agents.AgentsComplete, error) {
@@ -178,4 +195,22 @@ func encodeGRPCGetAnalysisResponse(_ context.Context, grpcResp interface{}) (int
 	resp.Unmarshal(&analysis)
 
 	return analysis, nil
+}
+
+func decodeGRPCGetAsyncRunnerRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
+	req := grpcReq.(*agents.GetAsyncRunnerRequest)
+
+	return &store.AsyncRunner{
+		RunnerID:   req.RunnerId,
+		RunnerType: req.RunnerType,
+	}, nil
+}
+
+func encodeGRPCGetAsyncRunnerResponse(_ context.Context, grpcResp interface{}) (interface{}, error) {
+	resp := grpcResp.(*store.AsyncRunner)
+
+	runner := new(agents.AgentsAsyncRunnerComplete)
+	resp.Unmarshal(&runner)
+
+	return runner, nil
 }

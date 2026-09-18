@@ -14,12 +14,16 @@ import (
 type EndpointSetup struct {
 	PostNoticeAnalysis endpoint.Endpoint
 	GetAnalysis        endpoint.Endpoint
+	ExecuteAnalysis    endpoint.Endpoint
+	GetAsyncRunner     endpoint.Endpoint
 	PostCopilot        endpoint.Endpoint
 }
 
 func NewEndpointSetup(s service.Service, logger log.Logger) *EndpointSetup {
 	var postNoticeAnalysisEndpoint endpoint.Endpoint
 	var getAnalysisEndpoint endpoint.Endpoint
+	var executeAnalysisEndpoint endpoint.Endpoint
+	var getAsyncRunnerEndpoint endpoint.Endpoint
 	var postCopilotEndpoint endpoint.Endpoint
 
 	loggingMiddleware := middlewares.EndpointLoggingMiddleware(logger, "agents")
@@ -33,6 +37,14 @@ func NewEndpointSetup(s service.Service, logger log.Logger) *EndpointSetup {
 		getAnalysisEndpoint = loggingMiddleware("GetAnalysis")(getAnalysisEndpoint)
 		getAnalysisEndpoint = metricsMiddleware("GetAnalysis")(getAnalysisEndpoint)
 
+		executeAnalysisEndpoint = MakeExecuteAnalysisEndpoint(s)
+		executeAnalysisEndpoint = loggingMiddleware("ExecuteAnalysis")(executeAnalysisEndpoint)
+		executeAnalysisEndpoint = metricsMiddleware("ExecuteAnalysis")(executeAnalysisEndpoint)
+
+		getAsyncRunnerEndpoint = MakeGetAsyncRunnerEndpoint(s)
+		getAsyncRunnerEndpoint = loggingMiddleware("GetAsyncRunner")(getAsyncRunnerEndpoint)
+		getAsyncRunnerEndpoint = metricsMiddleware("GetAsyncRunner")(getAsyncRunnerEndpoint)
+
 		postCopilotEndpoint = MakePostCopilotEndpoint(s)
 		postCopilotEndpoint = loggingMiddleware("PostCopilot")(postCopilotEndpoint)
 		postCopilotEndpoint = metricsMiddleware("PostCopilot")(postCopilotEndpoint)
@@ -41,6 +53,8 @@ func NewEndpointSetup(s service.Service, logger log.Logger) *EndpointSetup {
 	return &EndpointSetup{
 		PostNoticeAnalysis: postNoticeAnalysisEndpoint,
 		GetAnalysis:        getAnalysisEndpoint,
+		ExecuteAnalysis:    executeAnalysisEndpoint,
+		GetAsyncRunner:     getAsyncRunnerEndpoint,
 		PostCopilot:        postCopilotEndpoint,
 	}
 }
@@ -68,6 +82,34 @@ func MakeGetAnalysisEndpoint(s service.Service) endpoint.Endpoint {
 		req := request.(*store.Analysis)
 
 		c, err := s.GetAnalysis(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		return c, nil
+	}
+}
+
+func MakeExecuteAnalysisEndpoint(s service.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
+		req := request.(*store.Analysis)
+
+		c, err := s.ExecuteAnalysis(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Resp{
+			Items: c,
+		}, nil
+	}
+}
+
+func MakeGetAsyncRunnerEndpoint(s service.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
+		req := request.(*store.AsyncRunner)
+
+		c, err := s.GetAsyncRunner(ctx, req)
 		if err != nil {
 			return nil, err
 		}

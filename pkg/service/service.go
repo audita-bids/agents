@@ -11,23 +11,32 @@ import (
 	"unicode"
 
 	"github.com/audita-bids/private-kit/connectors"
+	"github.com/audita-bids/private-kit/pkg/pb/protocols/agents"
 	"github.com/audita-bids/private-kit/pkg/pb/protocols/client"
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-kit/log"
 	"github.com/redis/go-redis/v9"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 type Service interface {
 	PostAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
 	GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
+	ExecuteAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
+	GetAsyncRunner(ctx context.Context, runner *store.AsyncRunner) (*store.AsyncRunner, error)
 	PostCopilot(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error)
 }
+
+const (
+	TopicAnalysisCreated = "ANALYSIS_CREATED"
+)
 
 type service struct {
 	logger   log.Logger
 	db       *mongo.Database
 	analysis *store.AnalysisStore
+	runners  *store.AsyncRunnerStore
 	openai   *openai.Client
 	clients  client.ClientServiceClient
 }
@@ -36,6 +45,7 @@ func NewService(logger log.Logger, db *mongo.Database, redis *redis.Client) Serv
 	var svc Service
 
 	analysis := db.Collection("analysis")
+	runners := db.Collection("runners")
 
 	{
 		svc = &service{
@@ -43,6 +53,9 @@ func NewService(logger log.Logger, db *mongo.Database, redis *redis.Client) Serv
 			db:     db,
 			analysis: &store.AnalysisStore{
 				C: analysis,
+			},
+			runners: &store.AsyncRunnerStore{
+				C: runners,
 			},
 			openai:  openai.NewOpenaiClient(logger),
 			clients: client.NewClientServiceClient(connectors.Client()),
@@ -69,13 +82,6 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 		level.Error(s.logger).Log("msg", "failed to check existing analysis", "err", err)
 	}
 
-	v, err := s.openai.ResumeBase64(ctx, analysis.Base64)
-
-	if err != nil {
-		level.Error(s.logger).Log("msg", "failed to decode base64", "err", err)
-		return nil, err
-	}
-
 	// for now, deny if user doenst have keywords (or doenst exists, obvious)
 	c, err := s.clients.FindClient(ctx, &client.FindClientRequest{
 		Id: analysis.UserID,
@@ -96,7 +102,97 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 		return nil, errors.New("client has no keywords configured for scoring")
 	}
 
-	extraction, raw, err := s.openai.AnalyzeNotice(ctx, v, keywords)
+	now := time.Now()
+	analysis.Keywords = keywords
+	analysis.CreatedAt = &now
+	analysis.UpdatedAt = &now
+
+	err = s.analysis.CreateAnalysis(ctx, analysis)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to save analysis", "err", err)
+		return nil, err
+	}
+
+	runnerId := bson.NewObjectID()
+	runner := &store.AsyncRunner{
+		ID:         &runnerId,
+		RunnerType: agents.RunnerType_ANALYSIS_RUNNER,
+		RunnerID:   analysis.ID.Hex(),
+		CreatedAt:  &now,
+	}
+
+	err = s.runners.CreateAsyncRunner(ctx, runner)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to save runner", "err", err)
+		return nil, err
+	}
+
+	// The notice stays in the document and the event carries only the record,
+	// so the message keeps well under the broker's 1MB limit.
+	analysis.Base64 = ""
+
+	level.Info(s.logger).Log("msg", "analysis created", "id", analysis.ID.Hex(), "runner", runner.ID.Hex(), "keywords", len(keywords))
+	return analysis, nil
+}
+
+func (s *service) ExecuteAnalysis(ctx context.Context, analysis *store.Analysis) (result *store.Analysis, err error) {
+	stored, err := s.analysis.GetAnalysis(ctx, analysis)
+
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to load analysis", "err", err)
+		return nil, err
+	}
+
+	if stored.Finished {
+		level.Info(s.logger).Log("msg", "analysis already executed", "id", stored.ID.Hex())
+		return stored, nil
+	}
+
+	runner, err := s.runners.GetAsyncRunner(ctx, &store.AsyncRunner{
+		RunnerType: agents.RunnerType_ANALYSIS_RUNNER,
+		RunnerID:   stored.ID.Hex(),
+	})
+
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to load runner", "err", err)
+		return nil, err
+	}
+
+	started := time.Now()
+	runner.StartedAt = &started
+	runner.Error = false
+	runner.ErrorMessage = ""
+
+	if err = s.runners.UpdateAsyncRunner(ctx, runner); err != nil {
+		level.Error(s.logger).Log("msg", "failed to start runner", "err", err)
+		return nil, err
+	}
+
+	// Whatever happens from here the runner has to say so: the screen polls it
+	// to know whether to keep waiting, show the analysis or show the failure.
+	defer func() {
+		finished := time.Now()
+		runner.FinishedAt = &finished
+		runner.Finished = err == nil
+
+		if err != nil {
+			runner.Error = true
+			runner.ErrorMessage = err.Error()
+		}
+
+		if uerr := s.runners.UpdateAsyncRunner(ctx, runner); uerr != nil {
+			level.Error(s.logger).Log("msg", "failed to finish runner", "err", uerr)
+		}
+	}()
+
+	v, err := s.openai.ResumeBase64(ctx, stored.Base64)
+
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to decode base64", "err", err)
+		return nil, err
+	}
+
+	extraction, raw, err := s.openai.AnalyzeNotice(ctx, v, stored.Keywords)
 
 	if err != nil {
 		level.Error(s.logger).Log("msg", "notice analysis failed", "err", err)
@@ -104,7 +200,7 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 	}
 
 	if len(extraction.MatchedKeywords) == 0 {
-		extraction.MatchedKeywords = matchedKeywords(keywords, extraction.Object+" "+extraction.Summary)
+		extraction.MatchedKeywords = matchedKeywords(stored.Keywords, extraction.Object+" "+extraction.Summary)
 	}
 
 	score := int32(extraction.Score)
@@ -127,29 +223,37 @@ func (s *service) PostAnalysis(ctx context.Context, analysis *store.Analysis) (*
 
 	raw = string(corrected)
 
-	now := time.Now()
-	analysis.Finished = true
-	analysis.Object = extraction.Object
-	analysis.Modality = extraction.Modality
-	analysis.ProcessNumber = extraction.ProcessNumber
-	analysis.EstimatedValue = extraction.EstimatedValue
-	analysis.OpeningDate = extraction.OpeningDate
-	analysis.JudgmentCriteria = extraction.JudgmentCriteria
-	analysis.Content = extraction.Summary
-	analysis.Score = score
-	analysis.Keywords = keywords
-	analysis.AnalysisResult = raw
-	analysis.CreatedAt = &now
-	analysis.UpdatedAt = &now
+	runner.PromptTokens = extraction.PromptTokens
+	runner.CompletionTokens = extraction.CompletionTokens
 
-	err = s.analysis.CreateAnalysis(ctx, analysis)
+	now := time.Now()
+	stored.Finished = true
+	stored.Object = extraction.Object
+	stored.Modality = extraction.Modality
+	stored.ProcessNumber = extraction.ProcessNumber
+	stored.EstimatedValue = extraction.EstimatedValue
+	stored.OpeningDate = extraction.OpeningDate
+	stored.JudgmentCriteria = extraction.JudgmentCriteria
+	stored.Content = extraction.Summary
+	stored.Score = score
+	stored.AnalysisResult = raw
+	stored.UpdatedAt = &now
+	// The notice is only needed to run the analysis, and it is the largest
+	// field in the collection.
+	stored.Base64 = ""
+
+	err = s.analysis.UpdateAnalysis(ctx, stored)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed to save analysis", "err", err)
 		return nil, err
 	}
 
-	level.Info(s.logger).Log("msg", "analysis completed", "id", analysis.ID.Hex(), "score", analysis.Score, "qualifications", len(extraction.Qualifications), "qualifications_complete", extraction.QualificationsComplete, "prompt_tokens", extraction.PromptTokens, "completion_tokens", extraction.CompletionTokens)
-	return analysis, nil
+	level.Info(s.logger).Log("msg", "analysis completed", "id", stored.ID.Hex(), "score", stored.Score, "qualifications", len(extraction.Qualifications), "qualifications_complete", extraction.QualificationsComplete, "prompt_tokens", extraction.PromptTokens, "completion_tokens", extraction.CompletionTokens)
+	return stored, nil
+}
+
+func (s *service) GetAsyncRunner(ctx context.Context, runner *store.AsyncRunner) (*store.AsyncRunner, error) {
+	return s.runners.GetAsyncRunner(ctx, runner)
 }
 
 func (s *service) GetAnalysis(ctx context.Context, analysis *store.Analysis) (*store.Analysis, error) {

@@ -3,15 +3,16 @@ module agents
 go 1.26
 
 require (
-	github.com/audita-bids/private-kit v1.0.58
+	github.com/audita-bids/private-kit v1.1.3
 	github.com/drewlanenga/govector v0.0.0-20220726163947-b958ac08bc93
 	github.com/go-kit/kit v0.13.0
 	github.com/go-kit/log v0.2.1
 	github.com/gorilla/mux v1.8.1
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
+	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
 	github.com/oklog/run v1.2.0
 	github.com/openai/openai-go/v3 v3.61.0
 	github.com/redis/go-redis/v9 v9.21.0
+	github.com/segmentio/kafka-go v0.4.51
 	github.com/tmc/langchaingo v0.1.14
 	go.mongodb.org/mongo-driver/v2 v2.6.0
 	google.golang.org/grpc v1.81.0
@@ -35,7 +36,6 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/segmentio/kafka-go v0.4.51 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

@@ -1,31 +1,30 @@
 package transports
 
-/*
 import (
-	"client/pkg/endpoint"
+	"agents/pkg/endpoint"
+	"agents/store"
 	"context"
+	"encoding/json"
 
 	"github.com/audita-bids/private-kit/kafka"
-	"github.com/audita-bids/private-kit/pkg/pb/protocols/pncp"
-	kafkaGo "github.com/segmentio/kafka-go"
+	kaf "github.com/segmentio/kafka-go"
 )
 
 func NewKafkaConsumers(endpoints endpoint.EndpointSetup) kafka.Consumers {
 	return kafka.Consumers{
-		"TEST_ENDPOINT": kafka.NewConsumer(
-			endpoints.GetAvailableLicenses,
-			decodeTestMessage,
+		"ANALYSIS_CREATED": kafka.NewConsumer(
+			endpoints.ExecuteAnalysis,
+			decodeAnalysisMessage,
 		),
 	}
 }
 
-func decodeTestMessage(ctx context.Context, msg kafkaGo.Message) (interface{}, error) {
-	req := new(pncp.PncpAvailableLicenseRequest)
+func decodeAnalysisMessage(ctx context.Context, msg kaf.Message) (interface{}, error) {
+	req := new(store.Analysis)
 
-	if err := kafkaGo.Unmarshal(msg.Value, req); err != nil {
+	if err := json.Unmarshal(msg.Value, req); err != nil {
 		return nil, err
 	}
 
 	return req, nil
 }
-*/

@@ -11,6 +11,7 @@ import (
 	"github.com/audita-bids/private-kit/kafka"
 	"github.com/go-kit/log"
 	"github.com/redis/go-redis/v9"
+	kaf "github.com/segmentio/kafka-go"
 )
 
 var t = time.Now()
@@ -47,6 +48,24 @@ func (mw *loggingMiddleware) GetAnalysis(ctx context.Context, request *store.Ana
 
 	mw.logger.Log("method", "GetAnalysis", "status", "started")
 	return mw.next.GetAnalysis(ctx, request)
+}
+
+func (mw *loggingMiddleware) ExecuteAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	defer func() {
+		mw.logger.Log("method", "ExecuteAnalysis", "status", "completed")
+	}()
+
+	mw.logger.Log("method", "ExecuteAnalysis", "status", "started")
+	return mw.next.ExecuteAnalysis(ctx, request)
+}
+
+func (mw *loggingMiddleware) GetAsyncRunner(ctx context.Context, request *store.AsyncRunner) (*store.AsyncRunner, error) {
+	defer func() {
+		mw.logger.Log("method", "GetAsyncRunner", "status", "completed")
+	}()
+
+	mw.logger.Log("method", "GetAsyncRunner", "status", "started")
+	return mw.next.GetAsyncRunner(ctx, request)
 }
 
 func (mw *loggingMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
@@ -94,6 +113,28 @@ func (mw *recoveryMiddleware) GetAnalysis(ctx context.Context, request *store.An
 	return mw.next.GetAnalysis(ctx, request)
 }
 
+func (mw *recoveryMiddleware) ExecuteAnalysis(ctx context.Context, request *store.Analysis) (analysis *store.Analysis, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			mw.logger.Log("method", "ExecuteAnalysis", "status", "recovered", "error", r)
+			err = fmt.Errorf("recovered from panic: %v", r)
+		}
+	}()
+
+	return mw.next.ExecuteAnalysis(ctx, request)
+}
+
+func (mw *recoveryMiddleware) GetAsyncRunner(ctx context.Context, request *store.AsyncRunner) (runner *store.AsyncRunner, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			mw.logger.Log("method", "GetAsyncRunner", "status", "recovered", "error", r)
+			err = fmt.Errorf("recovered from panic: %v", r)
+		}
+	}()
+
+	return mw.next.GetAsyncRunner(ctx, request)
+}
+
 func (mw *recoveryMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (analysis *store.Analysis, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -121,12 +162,39 @@ type eventMiddleware struct {
 	logger   log.Logger
 }
 
-func (mw *eventMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+func (mw *eventMiddleware) PostAnalysis(ctx context.Context, request *store.Analysis) (result *store.Analysis, err error) {
+	defer func() {
+		mw.logger.Log("method", "PostAnalysis", "sending", "kafka message")
+
+		// An analysis that came back finished is the one already on record:
+		// there is nothing to execute a second time.
+		if err == nil && result != nil && !result.Finished {
+			msg := kaf.Message{
+				Topic: TopicAnalysisCreated,
+				Key:   []byte(result.Key()),
+				Value: result.Marshal(),
+			}
+
+			err = mw.producer.Publish(ctx, msg)
+			if err != nil {
+				mw.logger.Log("method", "PostAnalysis", "error", err)
+			}
+		}
+	}()
+
 	return mw.next.PostAnalysis(ctx, request)
 }
 
 func (mw *eventMiddleware) GetAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
 	return mw.next.GetAnalysis(ctx, request)
+}
+
+func (mw *eventMiddleware) ExecuteAnalysis(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
+	return mw.next.ExecuteAnalysis(ctx, request)
+}
+
+func (mw *eventMiddleware) GetAsyncRunner(ctx context.Context, request *store.AsyncRunner) (*store.AsyncRunner, error) {
+	return mw.next.GetAsyncRunner(ctx, request)
 }
 
 func (mw *eventMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
@@ -202,6 +270,22 @@ func (mw *cacheMiddleware) GetAnalysis(ctx context.Context, request *store.Analy
 	}
 
 	return mw.next.GetAnalysis(ctx, request)
+}
+
+func (mw *cacheMiddleware) ExecuteAnalysis(ctx context.Context, request *store.Analysis) (result *store.Analysis, err error) {
+	defer func() {
+		if err == nil && result != nil {
+			mw.redis.Del(ctx, result.KeyHandles()) // remove handlers.
+
+			mw.redis.Set(ctx, result.Key(), result, 0)
+		}
+	}()
+
+	return mw.next.ExecuteAnalysis(ctx, request)
+}
+
+func (mw *cacheMiddleware) GetAsyncRunner(ctx context.Context, request *store.AsyncRunner) (*store.AsyncRunner, error) {
+	return mw.next.GetAsyncRunner(ctx, request)
 }
 
 func (mw *cacheMiddleware) PostCopilot(ctx context.Context, request *store.Analysis) (*store.Analysis, error) {
